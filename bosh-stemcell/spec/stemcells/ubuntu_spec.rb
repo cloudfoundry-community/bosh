@@ -6,11 +6,11 @@ describe 'Ubuntu stemcell' do
       it { should be_file }
       it { should contain 'default=0' }
       it { should contain 'timeout=1' }
-      it { should contain 'title Ubuntu 10.04.4 LTS (3.0.0-32-virtual)' }
+      it { should contain 'title Ubuntu 12.04.4 LTS (3.2.0-58-virtual)' }
       it { should contain '  root (hd0,0)' }
-      it { should contain '  kernel /boot/vmlinuz-3.0.0-32-virtual ro root=UUID=' }
+      it { should contain '  kernel /boot/vmlinuz-3.2.0-58-virtual ro root=UUID=' }
       it { should contain ' selinux=0' }
-      it { should contain '  initrd /boot/initrd.img-3.0.0-32-virtual' }
+      it { should contain '  initrd /boot/initrd.img-3.2.0-58-virtual' }
     end
 
     describe file('/boot/grub/menu.lst') do
@@ -47,3 +47,4 @@ describe 'Ubuntu stemcell' do
     end
   end
 end
+
