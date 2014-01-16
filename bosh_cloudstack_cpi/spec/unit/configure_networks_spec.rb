@@ -50,11 +50,51 @@ describe Bosh::CloudStackCloud::Cloud do
   end
 
   it "adds floating ip to the server for vip network" do
-    # TODO
+    address = double("address", :id => "a-test", :ip_address => "10.0.0.1", :network_id => "a-test")
+    server = double("server", :id => "i-test", :name => "i-test", :addresses => [address], :zone_id => "foobar-2a")
+    network = double("network", :id => "n-test", :name => "n-test")
+    nat = double("nat", :id => "n-test", :ip_address_id => "n-test", :virtual_machine_id => "n-test", :network_id => "n-test")
+
+    nat.should_receive(:enable)
+
+    cloud = mock_cloud do |compute|
+      compute.servers.should_receive(:get).with("i-test").and_return(server)
+      compute.zones.should_receive(:get).with("foobar-2a").and_return(compute.zones[1])
+      compute.ipaddresses.should_receive(:all).and_return([address])
+      compute.networks.should_receive(:all).and_return([network])
+    end
+
+    old_settings = { "foo" => "bar", "networks" => "baz" }
+    new_settings = { "foo" => "bar", "networks" => combined_network_spec }
+
+    @registry.should_receive(:read_settings).with("i-test").and_return(old_settings)
+    @registry.should_receive(:update_settings).with("i-test", new_settings)
+
+    cloud.configure_networks("i-test", combined_network_spec)
   end
 
   it "removes floating ip from the server if vip network is gone" do
-    ## TODO
+    address = double("address", :id => "a-test", :ip_address => "10.0.0.1", :network_id => "a-test")
+    server = double("server", :id => "i-test", :name => "i-test", :addresses => [address], :zone_id => "foobar-1a")
+    network = double("network", :id => "n-test", :name => "n-test")
+    nat = double("nat", :id => "n-test", :ip_address_id => "n-test", :virtual_machine_id => "n-test", :network_id => "n-test")
+
+    nat.should_receive(:disable)
+
+    cloud = mock_cloud do |compute|
+      compute.servers.should_receive(:get).with("i-test").and_return(server)
+      compute.zones.should_receive(:get).with("foobar-2a").and_return(compute.zones[1])
+      compute.ipaddresses.should_receive(:all).and_return([address])
+      compute.networks.should_receive(:all).and_return([network])
+    end
+
+    old_settings = { "foo" => "bar", "networks" => "baz" }
+    new_settings = { "foo" => "bar", "networks" => combined_network_spec }
+
+    @registry.should_receive(:read_settings).with("i-test").and_return(old_settings)
+    @registry.should_receive(:update_settings).with("i-test", new_settings)
+
+    cloud.configure_networks("i-test", combined_network_spec)
   end
 
  def mock_cloud_advanced
