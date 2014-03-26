@@ -88,9 +88,9 @@ module Bosh::Dev::Sandbox
 
       if ENV['DB'] == 'mysql'
         mysql_user, mysql_password = ENV['TRAVIS'] ? ['travis', ''] : %w(root password)
-        @database = Mysql.new(sandbox_root, @name, @logger, mysql_user, mysql_password)
+        @database = Mysql.new(@name, @logger, mysql_user, mysql_password)
       else
-        @database = Postgresql.new(sandbox_root, @name, @logger)
+        @database = Postgresql.new(@name, @logger)
       end
 
       @database_migrator = DatabaseMigrator.new(DIRECTOR_PATH, director_config, @logger)
@@ -229,8 +229,8 @@ module Bosh::Dev::Sandbox
       @worker_process.start
 
       # CI does not have enough time to start bosh-director
-      # for some parallel tests; increasing to 40 secs (= 80 tries).
-      @director_socket_connector.try_to_connect(80)
+      # for some parallel tests; increasing to 60 secs (= 300 tries).
+      @director_socket_connector.try_to_connect(300)
     end
 
     def kill_agents

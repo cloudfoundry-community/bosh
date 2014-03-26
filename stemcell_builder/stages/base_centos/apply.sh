@@ -27,13 +27,8 @@ rpm --force --nodeps --install http://ftp.osuosl.org/pub/fedora-epel/6/x86_64/ep
 rpm --rebuilddb
 "
 
-custom_yum
-
 pkg_mgr groupinstall Base
 pkg_mgr groupinstall 'Development Tools'
-
-pkg_mgr install libyaml
-pkg_mgr install libyaml-devel
 
 touch ${chroot}/etc/sysconfig/network # must be present for network to be configured
 

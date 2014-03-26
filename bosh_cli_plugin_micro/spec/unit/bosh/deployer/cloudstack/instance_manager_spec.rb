@@ -1,5 +1,6 @@
 # Copyright (c) 2009-2012 VMware, Inc.
 require 'spec_helper'
+require 'logger'
 
 BOSH_STEMCELL_TGZ ||= 'bosh-instance-1.0.tgz'
 
@@ -41,13 +42,14 @@ module Bosh::Deployer
       instances.detect { |d| d[:name] == @deployer.state.name }
     end
 
-    def discover_bosh_ip(ip, id)
+    def stub_stuff_in_discover_bosh_ip(ip, id)
       server = double('server', id: id)
       servers = double('servers')
-      @compute.should_receive(:servers).and_return(servers)
-      servers.should_receive(:get).with(id).and_return(server)
-      @compute.should_receive(:ipaddresses).and_return(
+      allow(@compute).to receive(:servers).and_return(servers)
+      allow(servers).to receive(:get).with(id).and_return(server)
+      allow(@compute).to receive(:ipaddresses).and_return(
         [double(ip, virtual_machine_id: id, ip_address: ip)])
+      allow(server).to receive(:nics).and_return([{ 'ipaddress' => ip }])
     end
 
     it 'should not populate disk model' do
@@ -80,7 +82,7 @@ module Bosh::Deployer
       @agent.should_receive(:run_task).with(:apply, spec)
       @agent.should_receive(:run_task).with(:start)
 
-      discover_bosh_ip('10.0.0.1', 'VM-CID-CREATE')
+      stub_stuff_in_discover_bosh_ip('10.0.0.1', 'VM-CID-CREATE')
       @deployer.create(BOSH_STEMCELL_TGZ, nil)
 
       @deployer.state.stemcell_cid.should == 'SC-CID-CREATE'
@@ -149,7 +151,7 @@ module Bosh::Deployer
       @agent.should_receive(:run_task).with(:apply, spec)
       @agent.should_receive(:run_task).with(:start)
 
-      discover_bosh_ip('10.0.0.2', 'VM-CID')
+      stub_stuff_in_discover_bosh_ip('10.0.0.2', 'VM-CID')
       @deployer.update(BOSH_STEMCELL_TGZ, nil)
 
       @deployer.state.stemcell_cid.should == 'SC-CID'

@@ -43,7 +43,7 @@ module Bat
 
     def dns?
       info = @bosh_api.info
-      info['features'] && info['features']['dns']
+      info['features'] && info['features']['dns']['status']
     end
 
     def bosh_tld

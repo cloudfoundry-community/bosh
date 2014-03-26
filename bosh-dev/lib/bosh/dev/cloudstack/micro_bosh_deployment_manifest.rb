@@ -77,7 +77,7 @@ module Bosh::Dev::Cloudstack
           }
         },
         'registry' => {
-          'endpoint' => 'http://admin:admin@localhost:25889',
+          'endpoint' => "http://admin:admin@localhost:#{env['BOSH_CLOUDSTACK_REGISTRY_PORT'] || 25889}",
           'user' => 'admin',
           'password' => 'admin',
         },

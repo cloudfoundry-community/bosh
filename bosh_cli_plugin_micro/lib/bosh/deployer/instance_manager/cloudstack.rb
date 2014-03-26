@@ -5,10 +5,11 @@ require 'bosh/deployer/ssh_server'
 module Bosh::Deployer
   class InstanceManager
     class Cloudstack
-      def initialize(instance_manager, logger)
+      def initialize(instance_manager, config, logger)
         @instance_manager = instance_manager
         @logger = logger
-        properties = Config.cloud_options['properties']
+        @config = config
+        properties = config.cloud_options['properties']
 
         @registry = Registry.new(
           properties['registry']['endpoint'],
@@ -24,7 +25,7 @@ module Bosh::Deployer
       end
 
       def remote_tunnel
-        @remote_tunnel.create(instance_manager.bosh_ip, registry.port)
+        @remote_tunnel.create(instance_manager.client_services_ip, registry.port)
       end
 
       def disk_model
@@ -35,11 +36,11 @@ module Bosh::Deployer
         properties = spec.properties
 
         properties['cloudstack'] =
-          Config.spec_properties['cloudstack'] ||
-          Config.cloud_options['properties']['cloudstack'].dup
+          config.spec_properties['cloudstack'] ||
+          config.cloud_options['properties']['cloudstack'].dup
 
-        properties['cloudstack']['registry'] = Config.cloud_options['properties']['registry']
-        properties['cloudstack']['stemcell'] = Config.cloud_options['properties']['stemcell']
+        properties['cloudstack']['registry'] = config.cloud_options['properties']['registry']
+        properties['cloudstack']['stemcell'] = config.cloud_options['properties']['stemcell']
 
         spec.delete('networks')
       end
@@ -57,27 +58,18 @@ module Bosh::Deployer
         instance_manager.save_state
       end
 
-      def discover_bosh_ip
-        if instance_manager.state.vm_cid
-          server = floating_ip = instance_manager.cloud.compute.servers.
-            get(instance_manager.state.vm_cid)
-          floating_ip = instance_manager.cloud.compute.ipaddresses.find {
-              |addr| addr.virtual_machine_id == server.id
-          }
-          ip = floating_ip.nil? ? service_ip : floating_ip.ip_address
-
-          if ip != instance_manager.bosh_ip
-            instance_manager.bosh_ip = ip
-            logger.info("discovered bosh ip=#{instance_manager.bosh_ip}")
-          end
-        end
-
-        instance_manager.bosh_ip
+      def client_services_ip
+        logger.info('discovering client services ip')
+        discover_client_services_ip
       end
 
-      def service_ip
-        instance_manager.cloud.compute.servers.
-          get(instance_manager.state.vm_cid).nics.first['ipaddress']
+      def agent_services_ip
+        logger.info('discovering agent services ip')
+        discover_agent_services_ip
+      end
+
+      def internal_services_ip
+        config.internal_services_ip
       end
 
       # @return [Integer] size in MiB
@@ -91,13 +83,13 @@ module Bosh::Deployer
         # is a risk of conversion errors which lead to an unnecessary
         # disk migration, so we need to do a double conversion
         # here to avoid that
-        requested = (Config.resources['persistent_disk'] / 1024.0).ceil * 1024
+        requested = (config.resources['persistent_disk'] / 1024.0).ceil * 1024
         requested != disk_size(instance_manager.state.disk_cid)
       end
 
       private
 
-      attr_reader :registry, :instance_manager, :logger
+      attr_reader :registry, :instance_manager, :logger, :config
 
       def ssh_properties(properties)
         ssh_user = properties['cloudstack']['ssh_user']
@@ -112,6 +104,42 @@ module Bosh::Deployer
         end
 
         [ssh_key, ssh_port, ssh_user, ssh_wait]
+      end
+
+      def discover_client_services_ip
+        if instance_manager.state.vm_cid
+          server = instance_manager.cloud.compute.servers.get(instance_manager.state.vm_cid)
+
+          floating_ip = instance_manager.cloud.compute.ipaddresses.find {
+              |addr| addr.virtual_machine_id == server.id
+          }
+
+          private_ip_address = server.nics.first['ipaddress']
+
+          ip = floating_ip.nil? ? private_ip_address : floating_ip.ip_address
+
+          logger.info("discovered bosh ip=#{ip}")
+          ip
+        else
+          default_ip = config.client_services_ip
+          logger.info("ip address not discovered - using default of #{default_ip}")
+          default_ip
+        end
+      end
+
+      def discover_agent_services_ip
+        if instance_manager.state.vm_cid
+          server = instance_manager.cloud.compute.servers.get(instance_manager.state.vm_cid)
+
+          ip = server.nics.first['ipaddress']
+
+          logger.info("discovered bosh ip=#{ip}")
+          ip
+        else
+          default_ip = config.agent_services_ip
+          logger.info("ip address not discovered - using default of #{default_ip}")
+          default_ip
+        end
       end
     end
   end

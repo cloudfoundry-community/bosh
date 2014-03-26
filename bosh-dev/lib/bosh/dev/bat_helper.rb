@@ -4,6 +4,7 @@ require 'bosh/dev/aws/runner_builder'
 require 'bosh/dev/openstack/runner_builder'
 require 'bosh/dev/cloudstack/runner_builder'
 require 'bosh/dev/vsphere/runner_builder'
+require 'bosh/dev/vcloud/runner_builder'
 require 'bosh/dev/bat/artifacts'
 
 module Bosh::Dev
@@ -23,6 +24,7 @@ module Bosh::Dev
         'openstack' => Bosh::Dev::Openstack::RunnerBuilder.new,
         'cloudstack' => Bosh::Dev::Cloudstack::RunnerBuilder.new,
         'vsphere'   => Bosh::Dev::VSphere::RunnerBuilder.new,
+        'vcloud'    => Bosh::Dev::VCloud::RunnerBuilder.new,
       }[name]
     end
 
