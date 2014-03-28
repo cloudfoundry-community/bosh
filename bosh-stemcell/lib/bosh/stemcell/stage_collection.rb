@@ -53,6 +53,9 @@ module Bosh::Stemcell
         else
           openstack_stages
         end
+      when Infrastructure::CloudStack then
+          # centos is not supported
+          cloudstack_stages
       when Infrastructure::Vsphere then
         if operating_system.instance_of?(OperatingSystem::Centos)
           centos_vsphere_stages
@@ -75,6 +78,10 @@ module Bosh::Stemcell
       else
         default_openstack_stages
       end
+    end
+
+    def cloudstack_stages
+      default_cloudstack_stages
     end
 
     def vsphere_stages
@@ -213,6 +220,27 @@ module Bosh::Stemcell
         :image_openstack_prepare_stemcell,
         # Final stemcell
         :stemcell_openstack,
+      ]
+    end
+
+    def cloudstack_stages
+      [
+        # Misc
+        :system_appendix_cloudstack,
+        :system_cloudstack_network,
+        :system_cloudstack_clock,
+        :system_cloudstack_modules,
+        :system_parameters,
+        # Finalisation,
+        :bosh_clean,
+        :bosh_harden,
+        :bosh_harden_ssh,
+        # Image/bootloader
+        :image_create,
+        :image_install_grub,
+        :image_cloudstack_prepare_stemcell,
+        # Final stemcell
+        :stemcell_cloudstack
       ]
     end
 

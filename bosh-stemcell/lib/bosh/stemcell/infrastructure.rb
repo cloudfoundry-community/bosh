@@ -6,6 +6,8 @@ module Bosh::Stemcell
           OpenStack.new
         when 'aws'
           Aws.new
+        when 'cloudstack'
+          CloudStack.new
         when 'vsphere'
           Vsphere.new
         when 'vcloud'
@@ -66,6 +68,12 @@ module Bosh::Stemcell
     class Aws < Base
       def initialize
         super(name: 'aws', hypervisor: 'xen', supports_light_stemcell: true, default_disk_size: 2048)
+      end
+    end
+
+    class CloudStack < Base
+      def initialize
+        super(name: 'cloudstack', hypervisor: 'kvm', default_disk_size: 2048)
       end
     end
   end
