@@ -10,21 +10,21 @@ module Bosh::Dev
         'fake-build-number',
         'fake-infrastructure-name',
         'fake-operating-system-name',
+        'fake-operating-system-version',
+        'fake-agent-name',
       )
     end
 
     describe '.from_names' do
-
       let(:infrastructure) { instance_double('Bosh::Stemcell::Infrastructure::Base') }
-      let(:definition) {
+      let(:definition) do
         instance_double(
           'Bosh::Stemcell::Definition',
           infrastructure: infrastructure,
         )
-      }
+      end
 
       before do
-
         allow(Bosh::Stemcell::Definition).to receive(:for).and_return(definition)
       end
 
@@ -39,8 +39,12 @@ module Bosh::Dev
         it 'builds definition using infrastructure and operating system names and hardcoded ruby' do
           subject.definition
 
-          expect(Bosh::Stemcell::Definition).to have_received(:for)
-            .with('fake-infrastructure-name', 'fake-operating-system-name', 'ruby')
+          expect(Bosh::Stemcell::Definition).to have_received(:for).with(
+            'fake-infrastructure-name',
+            'fake-operating-system-name',
+            'fake-operating-system-version',
+            'fake-agent-name'
+          )
         end
       end
 

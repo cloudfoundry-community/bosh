@@ -1,251 +1,298 @@
 package disk_test
 
 import (
-	. "bosh/platform/disk"
-	fakesys "bosh/system/fakes"
 	"errors"
-	"github.com/stretchr/testify/assert"
+	"time"
 
 	. "github.com/onsi/ginkgo"
-	"time"
+	. "github.com/onsi/gomega"
+
+	. "bosh/platform/disk"
+	fakedisk "bosh/platform/disk/fakes"
+	fakesys "bosh/system/fakes"
 )
 
-type fsWithChangingFile struct {
-	procMounts []string
-	*fakesys.FakeFileSystem
+type changingMountsSearcher struct {
+	mounts [][]Mount
 }
 
-func (fs *fsWithChangingFile) ReadFileString(path string) (content string, err error) {
-	if path == "/proc/mounts" {
-		content = fs.procMounts[0]
-		fs.procMounts = fs.procMounts[1:]
-	}
-	return
+func (s *changingMountsSearcher) SearchMounts() ([]Mount, error) {
+	result := s.mounts[0]
+	s.mounts = s.mounts[1:]
+	return result, nil
 }
 
-const SWAPON_USAGE_OUTPUT = `Filename				Type		Size	Used	Priority
+const swaponUsageOutput = `Filename				Type		Size	Used	Priority
 /dev/swap                              partition	78180316	0	-1
 `
 
-const SWAPON_USAGE_OUTPUT_WITH_OTHER_DEVICE = `Filename				Type		Size	Used	Priority
+const swaponUsageOutputWithOtherDevice = `Filename				Type		Size	Used	Priority
 /dev/swap2                              partition	78180316	0	-1
 `
 
-func getLinuxMounterDependencies() (runner *fakesys.FakeCmdRunner, fs *fakesys.FakeFileSystem) {
-	runner = &fakesys.FakeCmdRunner{}
-	fs = &fakesys.FakeFileSystem{}
-	return
-}
-func init() {
-	Describe("Testing with Ginkgo", func() {
-		It("linux mount", func() {
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFile("/proc/mounts", []byte{})
+var _ = Describe("linuxMounter", func() {
+	var (
+		runner         *fakesys.FakeCmdRunner
+		mountsSearcher *fakedisk.FakeMountsSearcher
+		mounter        Mounter
+	)
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
+	BeforeEach(func() {
+		runner = fakesys.NewFakeCmdRunner()
+		mountsSearcher = &fakedisk.FakeMountsSearcher{}
+		mounter = NewLinuxMounter(runner, mountsSearcher, 1*time.Millisecond)
+	})
+
+	Describe("Mount", func() {
+		It("allows to mount disk at given mount point", func() {
 			err := mounter.Mount("/dev/foo", "/mnt/foo")
-
-			assert.NoError(GinkgoT(), err)
-			assert.Equal(GinkgoT(), 1, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"mount", "/dev/foo", "/mnt/foo"}, runner.RunCommands[0])
+			Expect(err).ToNot(HaveOccurred())
+			Expect(1).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"mount", "/dev/foo", "/mnt/foo"}))
 		})
-		It("linux mount when disk is already mounted to the good mount point", func() {
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/foo /mnt/foo\n/dev/bar /mnt/bar")
+		It("does not try to mount disk again when disk is already mounted to the expected mount point", func() {
+			mountsSearcher.SearchMountsMounts = []Mount{
+				Mount{PartitionPath: "/dev/foo", MountPoint: "/mnt/foo"},
+				Mount{PartitionPath: "/dev/bar", MountPoint: "/mnt/bar"},
+			}
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
 			err := mounter.Mount("/dev/foo", "/mnt/foo")
-
-			assert.NoError(GinkgoT(), err)
-			assert.Equal(GinkgoT(), 0, len(runner.RunCommands))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(0).To(Equal(len(runner.RunCommands)))
 		})
-		It("linux mount when disk is already mounted to the wrong mount point", func() {
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/foo /mnt/foobarbaz\n/dev/bar /mnt/bar")
+		It("returns error when disk is already mounted to the wrong mount point", func() {
+			mountsSearcher.SearchMountsMounts = []Mount{
+				Mount{PartitionPath: "/dev/foo", MountPoint: "/mnt/foobarbaz"},
+				Mount{PartitionPath: "/dev/bar", MountPoint: "/mnt/bar"},
+			}
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
 			err := mounter.Mount("/dev/foo", "/mnt/foo")
-
-			assert.Error(GinkgoT(), err)
-			assert.Equal(GinkgoT(), 0, len(runner.RunCommands))
+			Expect(err).To(HaveOccurred())
+			Expect(0).To(Equal(len(runner.RunCommands)))
 		})
-		It("linux mount when another disk is already mounted to mount point", func() {
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/baz /mnt/foo\n/dev/bar /mnt/bar")
+		It("returns error when another disk is already mounted to mount point", func() {
+			mountsSearcher.SearchMountsMounts = []Mount{
+				Mount{PartitionPath: "/dev/baz", MountPoint: "/mnt/foo"},
+				Mount{PartitionPath: "/dev/bar", MountPoint: "/mnt/bar"},
+			}
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
 			err := mounter.Mount("/dev/foo", "/mnt/foo")
-
-			assert.Error(GinkgoT(), err)
-			assert.Equal(GinkgoT(), 0, len(runner.RunCommands))
+			Expect(err).To(HaveOccurred())
+			Expect(0).To(Equal(len(runner.RunCommands)))
 		})
+
+		It("returns error and does not try to mount anything when searching mounts fails", func() {
+			mountsSearcher.SearchMountsErr = errors.New("fake-search-mounts-err")
+
+			err := mounter.Mount("/dev/foo", "/mnt/foo")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-search-mounts-err"))
+			Expect(0).To(Equal(len(runner.RunCommands)))
+		})
+	})
+
+	Describe("RemountAsReadonly", func() {
 		It("remount as readonly", func() {
+			changingMountsSearcher := &changingMountsSearcher{
+				[][]Mount{
+					[]Mount{Mount{PartitionPath: "/dev/baz", MountPoint: "/mnt/bar"}},
+					[]Mount{Mount{PartitionPath: "/dev/baz", MountPoint: "/mnt/bar"}},
+					[]Mount{},
+				},
+			}
 
-			runner, fs := getLinuxMounterDependencies()
-
-			procMounts := []string{"/dev/baz /mnt/bar ext4", "/dev/baz /mnt/bar ext4", ""}
-
-			mounter := NewLinuxMounter(runner, &fsWithChangingFile{procMounts, fs}, 1*time.Millisecond)
+			mounter := NewLinuxMounter(runner, changingMountsSearcher, 1*time.Millisecond)
 
 			err := mounter.RemountAsReadonly("/mnt/bar")
-
-			assert.NoError(GinkgoT(), err)
-			assert.Equal(GinkgoT(), 2, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"umount", "/mnt/bar"}, runner.RunCommands[0])
-			assert.Equal(GinkgoT(), []string{"mount", "/dev/baz", "/mnt/bar", "-o", "ro"}, runner.RunCommands[1])
+			Expect(err).ToNot(HaveOccurred())
+			Expect(2).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"umount", "/mnt/bar"}))
+			Expect(runner.RunCommands[1]).To(Equal([]string{"mount", "/dev/baz", "/mnt/bar", "-o", "ro"}))
 		})
+
+		It("returns error and does not try to unmount/mount anything when searching mounts fails", func() {
+			mountsSearcher.SearchMountsErr = errors.New("fake-search-mounts-err")
+
+			err := mounter.RemountAsReadonly("/mnt/bar")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-search-mounts-err"))
+			Expect(0).To(Equal(len(runner.RunCommands)))
+		})
+	})
+
+	Describe("Remount", func() {
 		It("remount", func() {
+			changingMountsSearcher := &changingMountsSearcher{
+				[][]Mount{
+					[]Mount{Mount{PartitionPath: "/dev/baz", MountPoint: "/mnt/foo"}},
+					[]Mount{Mount{PartitionPath: "/dev/baz", MountPoint: "/mnt/foo"}},
+					[]Mount{},
+				},
+			}
 
-			runner, fs := getLinuxMounterDependencies()
-
-			procMounts := []string{"/dev/baz /mnt/foo ext4", "/dev/baz /mnt/foo ext4", ""}
-
-			mounter := NewLinuxMounter(runner, &fsWithChangingFile{procMounts, fs}, 1*time.Millisecond)
+			mounter := NewLinuxMounter(runner, changingMountsSearcher, 1*time.Millisecond)
 
 			err := mounter.Remount("/mnt/foo", "/mnt/bar")
-
-			assert.NoError(GinkgoT(), err)
-			assert.Equal(GinkgoT(), 2, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"umount", "/mnt/foo"}, runner.RunCommands[0])
-			assert.Equal(GinkgoT(), []string{"mount", "/dev/baz", "/mnt/bar"}, runner.RunCommands[1])
+			Expect(err).ToNot(HaveOccurred())
+			Expect(2).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"umount", "/mnt/foo"}))
+			Expect(runner.RunCommands[1]).To(Equal([]string{"mount", "/dev/baz", "/mnt/bar"}))
 		})
-		It("linux swap on", func() {
 
-			runner, fs := getLinuxMounterDependencies()
+		It("returns error and does not try to unmount/mount anything when searching mounts fails", func() {
+			mountsSearcher.SearchMountsErr = errors.New("fake-search-mounts-err")
+
+			err := mounter.Remount("/mnt/foo", "/mnt/bar")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-search-mounts-err"))
+			Expect(0).To(Equal(len(runner.RunCommands)))
+		})
+	})
+
+	Describe("SwapOn", func() {
+		It("linux swap on", func() {
 			runner.AddCmdResult("swapon -s", fakesys.FakeCmdResult{Stdout: "Filename				Type		Size	Used	Priority\n"})
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
 			mounter.SwapOn("/dev/swap")
-
-			assert.Equal(GinkgoT(), 2, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"swapon", "/dev/swap"}, runner.RunCommands[1])
+			Expect(2).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[1]).To(Equal([]string{"swapon", "/dev/swap"}))
 		})
+
 		It("linux swap on when already on", func() {
+			runner.AddCmdResult("swapon -s", fakesys.FakeCmdResult{Stdout: swaponUsageOutput})
 
-			runner, fs := getLinuxMounterDependencies()
-			runner.AddCmdResult("swapon -s", fakesys.FakeCmdResult{Stdout: SWAPON_USAGE_OUTPUT})
-
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
 			mounter.SwapOn("/dev/swap")
-			assert.Equal(GinkgoT(), 1, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"swapon", "-s"}, runner.RunCommands[0])
+			Expect(1).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"swapon", "-s"}))
 		})
+
 		It("linux swap on when already on other device", func() {
+			runner.AddCmdResult("swapon -s", fakesys.FakeCmdResult{Stdout: swaponUsageOutputWithOtherDevice})
 
-			runner, fs := getLinuxMounterDependencies()
-			runner.AddCmdResult("swapon -s", fakesys.FakeCmdResult{Stdout: SWAPON_USAGE_OUTPUT_WITH_OTHER_DEVICE})
-
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
 			mounter.SwapOn("/dev/swap")
-			assert.Equal(GinkgoT(), 2, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"swapon", "-s"}, runner.RunCommands[0])
-			assert.Equal(GinkgoT(), []string{"swapon", "/dev/swap"}, runner.RunCommands[1])
+			Expect(2).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"swapon", "-s"}))
+			Expect(runner.RunCommands[1]).To(Equal([]string{"swapon", "/dev/swap"}))
 		})
-		It("linux unmount when partition is mounted", func() {
+	})
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/xvdb2 /var/vcap/data ext4")
+	Describe("Unmount", func() {
+		BeforeEach(func() {
+			mountsSearcher.SearchMountsMounts = []Mount{
+				Mount{PartitionPath: "/dev/xvdb2", MountPoint: "/var/vcap/data"},
+			}
+		})
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
+		It("unmounts based on partition when partition is mounted", func() {
 			didUnmount, err := mounter.Unmount("/dev/xvdb2")
-			assert.NoError(GinkgoT(), err)
-			assert.True(GinkgoT(), didUnmount)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(didUnmount).To(BeTrue())
 
-			assert.Equal(GinkgoT(), 1, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"umount", "/dev/xvdb2"}, runner.RunCommands[0])
+			Expect(1).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"umount", "/dev/xvdb2"}))
 		})
-		It("linux unmount when mount point is mounted", func() {
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/xvdb2 /var/vcap/data ext4")
-
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
+		It("unmount based on mount point when mount point is mounted", func() {
 			didUnmount, err := mounter.Unmount("/var/vcap/data")
-			assert.NoError(GinkgoT(), err)
-			assert.True(GinkgoT(), didUnmount)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(didUnmount).To(BeTrue())
 
-			assert.Equal(GinkgoT(), 1, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"umount", "/var/vcap/data"}, runner.RunCommands[0])
+			Expect(1).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"umount", "/var/vcap/data"}))
 		})
-		It("linux unmount when partition or mount point is not mounted", func() {
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/xvdb2 /var/vcap/data ext4")
-
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
+		It("returns without an error indicating that nothing was unmounted when partition or mount point is not mounted", func() {
 			didUnmount, err := mounter.Unmount("/dev/xvdb3")
-			assert.NoError(GinkgoT(), err)
-			assert.False(GinkgoT(), didUnmount)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(didUnmount).To(BeFalse())
 
-			assert.Equal(GinkgoT(), 0, len(runner.RunCommands))
+			Expect(0).To(Equal(len(runner.RunCommands)))
 		})
-		It("linux unmount when it fails several times", func() {
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/xvdb2 /var/vcap/data ext4")
-
+		It("returns without an error after failing several times and then succeeding to unmount", func() {
 			runner.AddCmdResult("umount /dev/xvdb2", fakesys.FakeCmdResult{Error: errors.New("fake-error")})
 			runner.AddCmdResult("umount /dev/xvdb2", fakesys.FakeCmdResult{Error: errors.New("fake-error")})
 			runner.AddCmdResult("umount /dev/xvdb2", fakesys.FakeCmdResult{})
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
-
 			didUnmount, err := mounter.Unmount("/dev/xvdb2")
-			assert.NoError(GinkgoT(), err)
-			assert.True(GinkgoT(), didUnmount)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(didUnmount).To(BeTrue())
 
-			assert.Equal(GinkgoT(), 3, len(runner.RunCommands))
-			assert.Equal(GinkgoT(), []string{"umount", "/dev/xvdb2"}, runner.RunCommands[0])
-			assert.Equal(GinkgoT(), []string{"umount", "/dev/xvdb2"}, runner.RunCommands[1])
-			assert.Equal(GinkgoT(), []string{"umount", "/dev/xvdb2"}, runner.RunCommands[2])
+			Expect(3).To(Equal(len(runner.RunCommands)))
+			Expect(runner.RunCommands[0]).To(Equal([]string{"umount", "/dev/xvdb2"}))
+			Expect(runner.RunCommands[1]).To(Equal([]string{"umount", "/dev/xvdb2"}))
+			Expect(runner.RunCommands[2]).To(Equal([]string{"umount", "/dev/xvdb2"}))
 		})
-		It("linux unmount when it fails too many times", func() {
 
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/xvdb2 /var/vcap/data ext4")
-
+		It("returns error when it fails to unmount too many times", func() {
 			runner.AddCmdResult("umount /dev/xvdb2", fakesys.FakeCmdResult{Error: errors.New("fake-error"), Sticky: true})
 
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
+			_, err := mounter.Unmount("/dev/xvdb2")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("returns error and does not try to unmount anything when searching mounts fails", func() {
+			mountsSearcher.SearchMountsErr = errors.New("fake-search-mounts-err")
 
 			_, err := mounter.Unmount("/dev/xvdb2")
-			assert.Error(GinkgoT(), err)
-		})
-		It("is mount point", func() {
-
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/xvdb2 /var/vcap/data ext4")
-
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
-
-			isMountPoint, err := mounter.IsMountPoint("/var/vcap/data")
-			assert.NoError(GinkgoT(), err)
-			assert.True(GinkgoT(), isMountPoint)
-
-			isMountPoint, err = mounter.IsMountPoint("/var/vcap/store")
-			assert.NoError(GinkgoT(), err)
-			assert.False(GinkgoT(), isMountPoint)
-		})
-		It("is mounted", func() {
-
-			runner, fs := getLinuxMounterDependencies()
-			fs.WriteFileString("/proc/mounts", "/dev/xvdb2 /var/vcap/data ext4")
-
-			mounter := NewLinuxMounter(runner, fs, 1*time.Millisecond)
-			isMounted, err := mounter.IsMounted("/dev/xvdb2")
-			assert.NoError(GinkgoT(), err)
-			assert.True(GinkgoT(), isMounted)
-
-			isMounted, err = mounter.IsMounted("/var/vcap/data")
-			assert.NoError(GinkgoT(), err)
-			assert.True(GinkgoT(), isMounted)
-
-			isMounted, err = mounter.IsMounted("/var/foo")
-			assert.NoError(GinkgoT(), err)
-			assert.False(GinkgoT(), isMounted)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-search-mounts-err"))
+			Expect(0).To(Equal(len(runner.RunCommands)))
 		})
 	})
-}
+
+	Describe("IsMountPoint", func() {
+		It("is mount point", func() {
+			mountsSearcher.SearchMountsMounts = []Mount{
+				Mount{PartitionPath: "/dev/xvdb2", MountPoint: "/var/vcap/data"},
+			}
+
+			isMountPoint, err := mounter.IsMountPoint("/var/vcap/data")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isMountPoint).To(BeTrue())
+
+			isMountPoint, err = mounter.IsMountPoint("/var/vcap/store")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isMountPoint).To(BeFalse())
+		})
+
+		It("returns error when searching mounts fails", func() {
+			mountsSearcher.SearchMountsErr = errors.New("fake-search-mounts-err")
+
+			_, err := mounter.IsMountPoint("/var/vcap/store")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-search-mounts-err"))
+		})
+	})
+
+	Describe("IsMounted", func() {
+		It("is mounted", func() {
+			mountsSearcher.SearchMountsMounts = []Mount{
+				Mount{PartitionPath: "/dev/xvdb2", MountPoint: "/var/vcap/data"},
+			}
+
+			isMounted, err := mounter.IsMounted("/dev/xvdb2")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isMounted).To(BeTrue())
+
+			isMounted, err = mounter.IsMounted("/var/vcap/data")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isMounted).To(BeTrue())
+
+			isMounted, err = mounter.IsMounted("/var/foo")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isMounted).To(BeFalse())
+		})
+
+		It("returns error when searching mounts fails", func() {
+			mountsSearcher.SearchMountsErr = errors.New("fake-search-mounts-err")
+
+			_, err := mounter.IsMounted("/var/foo")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-search-mounts-err"))
+		})
+	})
+})

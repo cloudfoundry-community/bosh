@@ -1,9 +1,10 @@
 package drain
 
 import (
+	"path/filepath"
+
 	boshdirs "bosh/settings/directories"
 	boshsys "bosh/system"
-	"path/filepath"
 )
 
 type ConcreteDrainScriptProvider struct {
@@ -23,8 +24,7 @@ func NewConcreteDrainScriptProvider(
 	return
 }
 
-func (p ConcreteDrainScriptProvider) NewDrainScript(templateName string) (drainScript DrainScript) {
+func (p ConcreteDrainScriptProvider) NewDrainScript(templateName string) DrainScript {
 	scriptPath := filepath.Join(p.dirProvider.JobsDir(), templateName, "bin", "drain")
-	drainScript = NewConcreteDrainScript(p.fs, p.cmdRunner, scriptPath)
-	return
+	return NewConcreteDrainScript(p.fs, p.cmdRunner, scriptPath)
 }

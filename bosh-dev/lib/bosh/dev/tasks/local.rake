@@ -1,6 +1,6 @@
 namespace :local do
   desc 'build a Stemcell locally'
-  task :build_with_local_os_image, [:infrastructure_name, :operating_system_name, :agent_name, :os_image_path] do |_, args|
+  task :build_with_local_os_image, [:infrastructure_name, :operating_system_name, :operating_system_version, :agent_name, :os_image_path] do |_, args|
     require 'bosh/dev/build'
     require 'bosh/dev/gem_components'
     require 'bosh/stemcell/build_environment'
@@ -12,7 +12,7 @@ namespace :local do
     # build stemcell
     build = Bosh::Dev::Build::Local.new(ENV['CANDIDATE_BUILD_NUMBER'], Bosh::Dev::LocalDownloadAdapter.new(Logger.new(STDERR)))
     gem_components = Bosh::Dev::GemComponents.new(build.number)
-    definition = Bosh::Stemcell::Definition.for(args.infrastructure_name, args.operating_system_name, args.agent_name)
+    definition = Bosh::Stemcell::Definition.for(args.infrastructure_name, args.operating_system_name, args.operating_system_version, args.agent_name)
     environment = Bosh::Stemcell::BuildEnvironment.new(
       ENV.to_hash,
       definition,

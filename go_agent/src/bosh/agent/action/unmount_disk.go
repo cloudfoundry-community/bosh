@@ -1,10 +1,12 @@
 package action
 
 import (
+	"errors"
+	"fmt"
+
 	bosherr "bosh/errors"
 	boshplatform "bosh/platform"
 	boshsettings "bosh/settings"
-	"fmt"
 )
 
 type UnmountDiskAction struct {
@@ -22,11 +24,15 @@ func (a UnmountDiskAction) IsAsynchronous() bool {
 	return true
 }
 
-func (a UnmountDiskAction) Run(volumeId string) (value interface{}, err error) {
+func (a UnmountDiskAction) IsPersistent() bool {
+	return false
+}
+
+func (a UnmountDiskAction) Run(volumeID string) (value interface{}, err error) {
 	disksSettings := a.settings.GetDisks()
-	devicePath, found := disksSettings.Persistent[volumeId]
+	devicePath, found := disksSettings.Persistent[volumeID]
 	if !found {
-		err = bosherr.New("Persistent disk with volume id '%s' could not be found", volumeId)
+		err = bosherr.New("Persistent disk with volume id '%s' could not be found", volumeID)
 		return
 	}
 
@@ -48,4 +54,12 @@ func (a UnmountDiskAction) Run(volumeId string) (value interface{}, err error) {
 
 	value = valueType{Message: msg}
 	return
+}
+
+func (a UnmountDiskAction) Resume() (interface{}, error) {
+	return nil, errors.New("not supported")
+}
+
+func (a UnmountDiskAction) Cancel() error {
+	return errors.New("not supported")
 }

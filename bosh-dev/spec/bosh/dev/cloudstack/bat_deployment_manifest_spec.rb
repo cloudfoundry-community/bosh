@@ -23,6 +23,8 @@ module Bosh::Dev::Cloudstack
       before do
         env.merge!(
           'BOSH_CLOUDSTACK_VIP_BAT_IP'       => 'vip',
+          'BOSH_CLOUDSTACK_STATIC_BAT_IP'    => 'fake-static-ip',
+          'BOSH_CLOUDSTACK_SECOND_STATIC_BAT_IP' => 'fake-second-static-ip',
           'BOSH_CLOUDSTACK_NETWORK_NAME'      => 'network_name',
         )
       end
@@ -33,7 +35,9 @@ module Bosh::Dev::Cloudstack
 ---
 cpi: cloudstack
 properties:
-  static_ip: vip
+  vip: vip
+  static_ip: fake-static-ip
+  second_static_ip: fake-second-static-ip
   uuid: director-uuid
   pool_size: 1
   stemcell:

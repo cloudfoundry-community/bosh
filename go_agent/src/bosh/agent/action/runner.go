@@ -1,24 +1,25 @@
 package action
 
 import (
-	bosherr "bosh/errors"
 	"encoding/json"
 	"reflect"
+
+	bosherr "bosh/errors"
 )
 
 type Runner interface {
 	Run(action Action, payload []byte) (value interface{}, err error)
+	Resume(action Action, payload []byte) (value interface{}, err error)
 }
 
 func NewRunner() Runner {
 	return concreteRunner{}
 }
 
-type concreteRunner struct {
-}
+type concreteRunner struct{}
 
 func (r concreteRunner) Run(action Action, payloadBytes []byte) (value interface{}, err error) {
-	payloadArgs, err := r.extractJsonArguments(payloadBytes)
+	payloadArgs, err := r.extractJSONArguments(payloadBytes)
 	if err != nil {
 		err = bosherr.WrapError(err, "Extracting json arguments")
 		return
@@ -47,7 +48,11 @@ func (r concreteRunner) Run(action Action, payloadBytes []byte) (value interface
 	return r.extractReturns(values)
 }
 
-func (r concreteRunner) extractJsonArguments(payloadBytes []byte) (args []interface{}, err error) {
+func (r concreteRunner) Resume(action Action, payloadBytes []byte) (value interface{}, err error) {
+	return action.Resume()
+}
+
+func (r concreteRunner) extractJSONArguments(payloadBytes []byte) (args []interface{}, err error) {
 	type payloadType struct {
 		Arguments []interface{} `json:"arguments"`
 	}

@@ -19,7 +19,9 @@ module Bosh::Dev::Cloudstack
       manifest_hash = {
         'cpi' => 'cloudstack',
         'properties' => {
-          'static_ip' => env['BOSH_CLOUDSTACK_VIP_BAT_IP'],
+          'vip' => env['BOSH_CLOUDSTACK_VIP_BAT_IP'],
+          'static_ip' => env['BOSH_CLOUDSTACK_STATIC_BAT_IP'],
+          'second_static_ip' => env['BOSH_CLOUDSTACK_SECOND_STATIC_BAT_IP'],
           'uuid' => director_uuid.value,
           'pool_size' => 1,
           'stemcell' => {

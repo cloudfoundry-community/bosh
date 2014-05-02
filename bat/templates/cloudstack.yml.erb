@@ -30,16 +30,9 @@ networks:
 
 - name: default
   type: <%= p('network.type') %>
-  dns:
-    <% if_p('dns_nameserver') do |dns_nameserver| %>
-    - <%= dns_nameserver %>
-    <% end %>
-    <% if_p('network.dns') do |dns| %>
-    - <%= dns %>
-    <% end %>
+  dns: <%= p('dns').inspect %>
   cloud_properties:
     network_name: <%= p('network.cloud_properties.network_name') %>
-
 
 resource_pools:
   - name: common
@@ -70,10 +63,10 @@ jobs:
     networks:
       - name: default
         default: [dns, gateway]
-      <% if properties.use_static_ip %>
+      <% if properties.use_vip %>
       - name: static
         static_ips:
-          - <%= properties.static_ip %>
+          - <%= properties.vip %>
       <% end %>
 
 properties:

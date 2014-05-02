@@ -1,67 +1,67 @@
 package infrastructure
 
 import (
+	"encoding/json"
+	"path/filepath"
+
 	bosherr "bosh/errors"
-	boshdevicepathresolver "bosh/infrastructure/device_path_resolver"
+	boshdpresolv "bosh/infrastructure/devicepathresolver"
 	boshplatform "bosh/platform"
 	boshsettings "bosh/settings"
 	boshdir "bosh/settings/directories"
 	boshsys "bosh/system"
-	"encoding/json"
-	"path/filepath"
 )
 
 type dummyInfrastructure struct {
 	fs                 boshsys.FileSystem
 	dirProvider        boshdir.DirectoriesProvider
 	platform           boshplatform.Platform
-	devicePathResolver boshdevicepathresolver.DevicePathResolver
+	devicePathResolver boshdpresolv.DevicePathResolver
 }
 
-func NewDummyInfrastructure(fs boshsys.FileSystem, dirProvider boshdir.DirectoriesProvider,
+func NewDummyInfrastructure(
+	fs boshsys.FileSystem,
+	dirProvider boshdir.DirectoriesProvider,
 	platform boshplatform.Platform,
-	devicePathResolver boshdevicepathresolver.DevicePathResolver) (inf dummyInfrastructure) {
+	devicePathResolver boshdpresolv.DevicePathResolver,
+) (inf dummyInfrastructure) {
 	inf.fs = fs
 	inf.dirProvider = dirProvider
 	inf.platform = platform
 	inf.devicePathResolver = devicePathResolver
-
 	return
 }
 
-func (inf dummyInfrastructure) GetDevicePathResolver() boshdevicepathresolver.DevicePathResolver {
+func (inf dummyInfrastructure) GetDevicePathResolver() boshdpresolv.DevicePathResolver {
 	return inf.devicePathResolver
 }
 
-func (inf dummyInfrastructure) SetupSsh(username string) (err error) {
-	return
+func (inf dummyInfrastructure) SetupSsh(username string) error {
+	return nil
 }
 
-func (inf dummyInfrastructure) GetSettings() (settings boshsettings.Settings, err error) {
-	settingsPath := filepath.Join(inf.dirProvider.BaseDir(), "bosh", "settings.json")
+func (inf dummyInfrastructure) GetSettings() (boshsettings.Settings, error) {
+	var settings boshsettings.Settings
+
+	// dummy-cpi-agent-env.json is written out by dummy CPI.
+	settingsPath := filepath.Join(inf.dirProvider.BoshDir(), "dummy-cpi-agent-env.json")
 	contents, err := inf.fs.ReadFile(settingsPath)
 	if err != nil {
-		err = bosherr.WrapError(err, "Read settings file")
-		return
+		return settings, bosherr.WrapError(err, "Read settings file")
 	}
 
 	err = json.Unmarshal([]byte(contents), &settings)
 	if err != nil {
-		err = bosherr.WrapError(err, "Unmarshal json settings")
-		return
+		return settings, bosherr.WrapError(err, "Unmarshal json settings")
 	}
 
-	return
+	return settings, nil
 }
 
-func (inf dummyInfrastructure) SetupNetworking(networks boshsettings.Networks) (err error) {
-	return
+func (inf dummyInfrastructure) SetupNetworking(networks boshsettings.Networks) error {
+	return nil
 }
 
-func (inf dummyInfrastructure) GetEphemeralDiskPath(devicePath string) (realPath string, found bool) {
+func (inf dummyInfrastructure) GetEphemeralDiskPath(devicePath string) (string, bool) {
 	return inf.platform.NormalizeDiskPath(devicePath)
-}
-
-func (inf dummyInfrastructure) MountPersistentDisk(volumeId string, mountPoint string) (err error) {
-	return
 }

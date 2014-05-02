@@ -10,6 +10,8 @@ module Bosh::Stemcell
           CloudStack.new
         when 'vsphere'
           Vsphere.new
+        when 'warden'
+          Warden.new
         when 'vcloud'
           Vcloud.new
         when 'null'
@@ -74,6 +76,12 @@ module Bosh::Stemcell
     class CloudStack < Base
       def initialize
         super(name: 'cloudstack', hypervisor: 'kvm', default_disk_size: 2048)
+      end
+    end
+
+    class Warden < Base
+      def initialize
+        super(name: 'warden', hypervisor: 'boshlite', default_disk_size: 2048)
       end
     end
   end

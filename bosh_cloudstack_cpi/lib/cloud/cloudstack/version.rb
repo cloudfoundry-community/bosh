@@ -3,6 +3,6 @@
 
 module Bosh
   module CloudStackCloud
-    VERSION = '1.2200.0'
+    VERSION = '1.2524.0'
   end
 end

@@ -4,6 +4,7 @@ module Bosh::Dev
       @vm_name = options.fetch(:vm_name)
       @infrastructure_name = options.fetch(:infrastructure_name)
       @operating_system_name = options.fetch(:operating_system_name)
+      @operating_system_version = options.fetch(:operating_system_version)
       @agent_name = options.fetch(:agent_name)
       @os_image_s3_bucket_name = options.fetch(:os_image_s3_bucket_name)
       @os_image_s3_key = options.fetch(:os_image_s3_key)
@@ -18,12 +19,12 @@ module Bosh::Dev
         cd bosh-stemcell
         [ -e .vagrant/machines/remote/aws/id ] && vagrant destroy #{vm_name} --force
         vagrant up #{vm_name} --provider #{provider}
+        [ -e .vagrant/machines/remote/aws/id ] && cat .vagrant/machines/remote/aws/id
 
         vagrant ssh -c "
           bash -l -c '
             set -eu
             cd /bosh
-            bundle install --local
 
             #{exports.join("\n            ")}
 
@@ -45,7 +46,7 @@ module Bosh::Dev
     end
 
     def build_task_args
-      "#{infrastructure_name},#{operating_system_name},#{agent_name},#{os_image_s3_bucket_name},#{os_image_s3_key}"
+      "#{infrastructure_name},#{operating_system_name},#{operating_system_version},#{agent_name},#{os_image_s3_bucket_name},#{os_image_s3_key}"
     end
 
     private
@@ -53,6 +54,7 @@ module Bosh::Dev
     attr_reader :vm_name,
                 :infrastructure_name,
                 :operating_system_name,
+                :operating_system_version,
                 :agent_name,
                 :os_image_s3_bucket_name,
                 :os_image_s3_key,

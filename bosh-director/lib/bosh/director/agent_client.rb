@@ -8,9 +8,16 @@ module Bosh::Director
 
     def self.with_defaults(id, options = {})
       defaults = {
-        retry_methods: { # in case of timeout errors
-                         get_state: 2,
-                         get_task: 2,
+        retry_methods: {
+          # in case of timeout errors
+          get_state: 2,
+
+          # get_task should retry at least once because some long running tasks
+          # (e.g. configure_networks) will restart the agent (current implementation)
+          # which most likely will result in first get_task message being lost
+          # because agent was not listening on NATS and second retry message
+          # will probably be received because agent came back up.
+          get_task: 2,
         }
       }
 
@@ -40,8 +47,19 @@ module Bosh::Director
       send_message(method_name, *args)
     end
 
-    def get_state(*args)
-      send_message(:get_state, *args)
+    # Define methods on this class to make instance_double more useful
+    [
+      :cancel_task,
+      :get_state,
+      :get_task,
+      :list_disk,
+      :prepare_network_change,
+      :prepare_configure_networks,
+      :start,
+    ].each do |message|
+      define_method(message) do |*args|
+        send_message(message, *args)
+      end
     end
 
     def prepare(*args)
@@ -80,8 +98,24 @@ module Bosh::Director
       send_long_running_message(:stop, *args)
     end
 
-    def run_errand(*args)
-      send_long_running_message(:run_errand, *args)
+    def start_errand(*args)
+      start_long_running_task(:run_errand, *args)
+    end
+
+    def wait_for_task(agent_task_id, &blk)
+      task = get_task_status(agent_task_id)
+
+      while task['state'] == 'running'
+        blk.call if block_given?
+        sleep(DEFAULT_POLL_INTERVAL)
+        task = get_task_status(agent_task_id)
+      end
+
+      task['value']
+    end
+
+    def configure_networks(*args)
+      send_long_running_message(:configure_networks, *args)
     end
 
     def wait_until_ready(deadline = 600)
@@ -215,13 +249,17 @@ module Bosh::Director
       end
     end
 
-    def send_long_running_message(method_name, *args)
-      task = AgentMessageConverter.convert_old_message_to_new(send_message(method_name, *args))
-      while task['state'] == 'running'
-        sleep(DEFAULT_POLL_INTERVAL)
-        task = AgentMessageConverter.convert_old_message_to_new(get_task(task['agent_task_id']))
-      end
-      task['value']
+    def send_long_running_message(method_name, *args, &blk)
+      task = start_long_running_task(method_name, *args)
+      wait_for_task(task['agent_task_id'], &blk)
+    end
+
+    def start_long_running_task(method_name, *args)
+      AgentMessageConverter.convert_old_message_to_new(send_message(method_name, *args))
+    end
+
+    def get_task_status(agent_task_id)
+      AgentMessageConverter.convert_old_message_to_new(get_task(agent_task_id))
     end
   end
 end

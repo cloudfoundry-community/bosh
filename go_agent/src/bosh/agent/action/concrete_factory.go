@@ -43,31 +43,48 @@ func NewFactory(
 
 	factory = concreteFactory{
 		availableActions: map[string]Action{
-			"apply":        NewApply(applier, specService),
-			"drain":        NewDrain(notifier, specService, drainScriptProvider),
-			"fetch_logs":   NewLogs(compressor, copier, blobstore, dirProvider),
-			"get_task":     NewGetTask(taskService),
-			"get_state":    NewGetState(settings, specService, jobSupervisor, vitalsService, ntpService),
-			"list_disk":    NewListDisk(settings, platform, logger),
-			"migrate_disk": NewMigrateDisk(platform, dirProvider),
-			"mount_disk":   NewMountDisk(settings, infrastructure, platform, dirProvider),
-			"ping":         NewPing(),
-			"prepare_network_change": NewPrepareNetworkChange(platform),
-			"ssh":                NewSsh(settings, platform, dirProvider),
-			"start":              NewStart(jobSupervisor),
-			"stop":               NewStop(jobSupervisor),
-			"unmount_disk":       NewUnmountDisk(settings, platform),
+			// Task management
+			"ping":        NewPing(),
+			"get_task":    NewGetTask(taskService),
+			"cancel_task": NewCancelTask(taskService),
+
+			// VM admin
+			"ssh":        NewSsh(settings, platform, dirProvider),
+			"fetch_logs": NewFetchLogs(compressor, copier, blobstore, dirProvider),
+
+			// Job management
+			"prepare":    NewPrepare(applier),
+			"apply":      NewApply(applier, specService),
+			"start":      NewStart(jobSupervisor),
+			"stop":       NewStop(jobSupervisor),
+			"drain":      NewDrain(notifier, specService, drainScriptProvider, jobSupervisor),
+			"get_state":  NewGetState(settings, specService, jobSupervisor, vitalsService, ntpService),
+			"run_errand": NewRunErrand(specService, dirProvider.JobsDir(), platform.GetRunner()),
+
+			// Compilation
 			"compile_package":    NewCompilePackage(compiler),
 			"release_apply_spec": NewReleaseApplySpec(platform),
+
+			// Disk management
+			"list_disk":    NewListDisk(settings, platform, logger),
+			"migrate_disk": NewMigrateDisk(platform, dirProvider),
+			"mount_disk":   NewMountDisk(settings, platform, platform, dirProvider),
+			"unmount_disk": NewUnmountDisk(settings, platform),
+
+			// Networking
+			"prepare_network_change":     NewPrepareNetworkChange(platform.GetFs(), settings),
+			"prepare_configure_networks": NewPrepareConfigureNetworks(platform.GetFs(), settings),
+			"configure_networks":         NewConfigureNetworks(),
 		},
 	}
 	return
 }
 
-func (f concreteFactory) Create(method string) (action Action, err error) {
+func (f concreteFactory) Create(method string) (Action, error) {
 	action, found := f.availableActions[method]
 	if !found {
-		err = bosherr.New("Could not create action with method %s", method)
+		return nil, bosherr.New("Could not create action with method %s", method)
 	}
-	return
+
+	return action, nil
 }

@@ -29,6 +29,7 @@ module Bosh::Deployer::InfrastructureDefaults
           'api_key' => nil,
           'secret_access_key' => nil,
           'default_key_name' => nil,
+          'wait_resource_poll_interval' => 5,
           'default_zone' => nil,
           'default_security_groups' => [],
           'ssh_user' => 'vcap'

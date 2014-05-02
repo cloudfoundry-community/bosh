@@ -18,6 +18,7 @@ module Bosh::CloudStackCloud
     attr_reader :metadata_server
     attr_reader :state_timeout
     attr_reader :state_timeout_volume
+    attr_reader :wait_resource_poll_interval
 
     ##
     # Creates a new BOSH CloudStack CPI
@@ -42,6 +43,7 @@ module Bosh::CloudStackCloud
       @state_timeout = @fog_properties["state_timeout"]
       @state_timeout_volume = @fog_properties["state_timeout_volume"] || @fog_properties["state_timeout"]
       @stemcell_public_visibility = @fog_properties["stemcell_public_visibility"]
+      @wait_resource_poll_interval = @fog_properties["wait_resource_poll_interval"]
 
       endpoint_uri = URI.parse(@fog_properties["endpoint"])
 
@@ -61,7 +63,6 @@ module Bosh::CloudStackCloud
         @logger.error(e)
         cloud_error("Unable to connect to the CloudStack Compute API. Check task debug log for details.")
       end
-
       @default_zone = @compute.zones.find { |zone| zone.name == @fog_properties["default_zone"] }
       cloud_error("Unable to find the zone named #{@fog_properties["default_zone"]}.") if @default_zone.nil?
       @metadata_server = @fog_properties["metadata_server"] ||

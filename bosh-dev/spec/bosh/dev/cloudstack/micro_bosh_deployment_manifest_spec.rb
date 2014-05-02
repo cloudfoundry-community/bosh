@@ -56,6 +56,7 @@ cloud:
       default_security_groups: []
       state_timeout: 300
       state_timeout_volume: 300
+      wait_resource_poll_interval: 5
       connection_options:
         connect_timeout: 60
     registry:
@@ -128,6 +129,7 @@ YAML
             'default_zone' => 'fake-default-zone',
             'state_timeout' => 300,
             'state_timeout_volume' => 300,
+            'wait_resource_poll_interval' => 5,
             'connection_options' => {
               'connect_timeout' => 60,
             }
