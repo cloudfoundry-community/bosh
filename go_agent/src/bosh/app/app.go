@@ -1,14 +1,17 @@
 package app
 
 import (
+	"path/filepath"
+	"time"
+
 	boshagent "bosh/agent"
 	boshaction "bosh/agent/action"
 	boshalert "bosh/agent/alert"
 	boshapplier "bosh/agent/applier"
 	boshas "bosh/agent/applier/applyspec"
-	bc "bosh/agent/applier/bundlecollection"
-	ja "bosh/agent/applier/jobapplier"
-	pa "bosh/agent/applier/packageapplier"
+	boshbc "bosh/agent/applier/bundlecollection"
+	boshja "bosh/agent/applier/jobapplier"
+	boshpa "bosh/agent/applier/packageapplier"
 	boshcomp "bosh/agent/compiler"
 	boshdrain "bosh/agent/drain"
 	boshtask "bosh/agent/task"
@@ -22,9 +25,10 @@ import (
 	boshmbus "bosh/mbus"
 	boshnotif "bosh/notification"
 	boshplatform "bosh/platform"
+	boshsettings "bosh/settings"
 	boshdirs "bosh/settings/directories"
-	"path/filepath"
-	"time"
+	boshsys "bosh/system"
+	boshuuid "bosh/uuid"
 )
 
 type app struct {
@@ -34,25 +38,28 @@ type app struct {
 	infrastructure boshinf.Infrastructure
 }
 
-func New(logger boshlog.Logger) (app app) {
-	app.logger = logger
-	return
+func New(logger boshlog.Logger) app {
+	return app{logger: logger}
 }
 
-func (app *app) Setup(args []string) (err error) {
+func (app *app) Setup(args []string) error {
 	opts, err := ParseOptions(args)
 	if err != nil {
-		err = bosherr.WrapError(err, "Parsing options")
-		return
+		return bosherr.WrapError(err, "Parsing options")
+	}
+
+	config, err := app.loadConfig(opts.ConfigPath)
+	if err != nil {
+		return bosherr.WrapError(err, "Loading config")
 	}
 
 	dirProvider := boshdirs.NewDirectoriesProvider(opts.BaseDirectory)
 
-	platformProvider := boshplatform.NewProvider(app.logger, dirProvider)
+	platformProvider := boshplatform.NewProvider(app.logger, dirProvider, config.Platform)
+
 	app.platform, err = platformProvider.Get(opts.PlatformName)
 	if err != nil {
-		err = bosherr.WrapError(err, "Getting platform")
-		return
+		return bosherr.WrapError(err, "Getting platform")
 	}
 
 	infProvider := boshinf.NewProvider(app.logger, app.platform)
@@ -61,83 +68,80 @@ func (app *app) Setup(args []string) (err error) {
 	app.platform.SetDevicePathResolver(app.infrastructure.GetDevicePathResolver())
 
 	if err != nil {
-		err = bosherr.WrapError(err, "Getting infrastructure")
-		return
+		return bosherr.WrapError(err, "Getting infrastructure")
 	}
 
-	boot := boshboot.New(app.infrastructure, app.platform, dirProvider)
+	settingsServiceProvider := boshsettings.NewServiceProvider()
+
+	boot := boshboot.New(
+		app.infrastructure,
+		app.platform,
+		dirProvider,
+		settingsServiceProvider,
+		app.logger,
+	)
+
 	settingsService, err := boot.Run()
 	if err != nil {
-		err = bosherr.WrapError(err, "Running bootstrap")
-		return
+		return bosherr.WrapError(err, "Running bootstrap")
 	}
 
 	mbusHandlerProvider := boshmbus.NewHandlerProvider(settingsService, app.logger)
+
 	mbusHandler, err := mbusHandlerProvider.Get(app.platform, dirProvider)
 	if err != nil {
-		err = bosherr.WrapError(err, "Getting mbus handler")
-		return
+		return bosherr.WrapError(err, "Getting mbus handler")
 	}
 
 	blobstoreProvider := boshblob.NewProvider(app.platform, dirProvider)
+
 	blobstore, err := blobstoreProvider.Get(settingsService.GetBlobstore())
 	if err != nil {
-		err = bosherr.WrapError(err, "Getting blobstore")
-		return
+		return bosherr.WrapError(err, "Getting blobstore")
 	}
 
 	monitClientProvider := boshmonit.NewProvider(app.platform, app.logger)
+
 	monitClient, err := monitClientProvider.Get()
 	if err != nil {
-		err = bosherr.WrapError(err, "Getting monit client")
-		return
+		return bosherr.WrapError(err, "Getting monit client")
 	}
 
-	jobSupervisorProvider := boshjobsuper.NewProvider(app.platform, monitClient, app.logger, dirProvider)
+	jobSupervisorProvider := boshjobsuper.NewProvider(
+		app.platform,
+		monitClient,
+		app.logger,
+		dirProvider,
+		mbusHandler,
+	)
+
 	jobSupervisor, err := jobSupervisorProvider.Get(opts.JobSupervisor)
 	if err != nil {
-		err = bosherr.WrapError(err, "Getting job supervisor")
-		return
+		return bosherr.WrapError(err, "Getting job supervisor")
 	}
 
 	notifier := boshnotif.NewNotifier(mbusHandler)
 
-	installPath := filepath.Join(dirProvider.BaseDir(), "data")
+	applier, compiler := app.buildApplierAndCompiler(dirProvider, blobstore, jobSupervisor)
 
-	jobsBc := bc.NewFileBundleCollection(installPath, dirProvider.BaseDir(), "jobs", app.platform.GetFs())
+	uuidGen := boshuuid.NewGenerator()
 
-	jobApplier := ja.NewRenderedJobApplier(
-		jobsBc,
-		blobstore,
-		app.platform.GetCompressor(),
-		jobSupervisor,
-	)
+	taskService := boshtask.NewAsyncTaskService(uuidGen, app.logger)
 
-	packagesBc := bc.NewFileBundleCollection(installPath, dirProvider.BaseDir(), "packages", app.platform.GetFs())
-
-	packageApplier := pa.NewConcretePackageApplier(
-		packagesBc,
-		blobstore,
-		app.platform.GetCompressor(),
-	)
-
-	applier := boshapplier.NewConcreteApplier(jobApplier, packageApplier, app.platform, jobSupervisor, dirProvider)
-
-	compiler := boshcomp.NewConcreteCompiler(
-		app.platform.GetCompressor(),
-		blobstore,
+	taskManager := boshtask.NewManagerProvider().NewManager(
+		app.logger,
 		app.platform.GetFs(),
-		app.platform.GetRunner(),
-		dirProvider,
-		packageApplier,
-		packagesBc,
+		dirProvider.BoshDir(),
 	)
 
-	taskService := boshtask.NewAsyncTaskService(app.logger)
-
-	specFilePath := filepath.Join(dirProvider.BaseDir(), "bosh", "spec.json")
+	specFilePath := filepath.Join(dirProvider.BoshDir(), "spec.json")
 	specService := boshas.NewConcreteV1Service(app.platform.GetFs(), specFilePath)
-	drainScriptProvider := boshdrain.NewConcreteDrainScriptProvider(app.platform.GetRunner(), app.platform.GetFs(), dirProvider)
+
+	drainScriptProvider := boshdrain.NewConcreteDrainScriptProvider(
+		app.platform.GetRunner(),
+		app.platform.GetFs(),
+		dirProvider,
+	)
 
 	actionFactory := boshaction.NewFactory(
 		settingsService,
@@ -153,21 +157,39 @@ func (app *app) Setup(args []string) (err error) {
 		drainScriptProvider,
 		app.logger,
 	)
+
 	actionRunner := boshaction.NewRunner()
-	actionDispatcher := boshagent.NewActionDispatcher(app.logger, taskService, actionFactory, actionRunner)
+
+	actionDispatcher := boshagent.NewActionDispatcher(
+		app.logger,
+		taskService,
+		taskManager,
+		actionFactory,
+		actionRunner,
+	)
+
 	alertBuilder := boshalert.NewBuilder(settingsService, app.logger)
 
-	app.agent = boshagent.New(app.logger, mbusHandler, app.platform, actionDispatcher, alertBuilder, jobSupervisor, time.Minute)
+	app.agent = boshagent.New(
+		app.logger,
+		mbusHandler,
+		app.platform,
+		actionDispatcher,
+		alertBuilder,
+		jobSupervisor,
+		specService,
+		time.Minute,
+	)
 
-	return
+	return nil
 }
 
-func (app *app) Run() (err error) {
-	err = app.agent.Run()
+func (app *app) Run() error {
+	err := app.agent.Run()
 	if err != nil {
-		err = bosherr.WrapError(err, "Running agent")
+		return bosherr.WrapError(err, "Running agent")
 	}
-	return
+	return nil
 }
 
 func (app *app) GetPlatform() boshplatform.Platform {
@@ -176,4 +198,65 @@ func (app *app) GetPlatform() boshplatform.Platform {
 
 func (app *app) GetInfrastructure() boshinf.Infrastructure {
 	return app.infrastructure
+}
+
+func (app *app) buildApplierAndCompiler(
+	dirProvider boshdirs.DirectoriesProvider,
+	blobstore boshblob.Blobstore,
+	jobSupervisor boshjobsuper.JobSupervisor,
+) (boshapplier.Applier, boshcomp.Compiler) {
+	jobsBc := boshbc.NewFileBundleCollection(
+		dirProvider.DataDir(),
+		dirProvider.BaseDir(),
+		"jobs",
+		app.platform.GetFs(),
+		app.logger,
+	)
+
+	packageApplierProvider := boshpa.NewConcretePackageApplierProvider(
+		dirProvider.DataDir(),
+		dirProvider.BaseDir(),
+		dirProvider.JobsDir(),
+		"packages",
+		blobstore,
+		app.platform.GetCompressor(),
+		app.platform.GetFs(),
+		app.logger,
+	)
+
+	jobApplier := boshja.NewRenderedJobApplier(
+		jobsBc,
+		jobSupervisor,
+		packageApplierProvider,
+		blobstore,
+		app.platform.GetCompressor(),
+		app.platform.GetFs(),
+		app.logger,
+	)
+
+	applier := boshapplier.NewConcreteApplier(
+		jobApplier,
+		packageApplierProvider.Root(),
+		app.platform,
+		jobSupervisor,
+		dirProvider,
+	)
+
+	compiler := boshcomp.NewConcreteCompiler(
+		app.platform.GetCompressor(),
+		blobstore,
+		app.platform.GetFs(),
+		app.platform.GetRunner(),
+		dirProvider,
+		packageApplierProvider.Root(),
+		packageApplierProvider.RootBundleCollection(),
+	)
+
+	return applier, compiler
+}
+
+func (app *app) loadConfig(path string) (Config, error) {
+	// Use one off copy of file system to read configuration file
+	fs := boshsys.NewOsFileSystem(app.logger)
+	return LoadConfigFromPath(fs, path)
 }

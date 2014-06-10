@@ -50,7 +50,7 @@ describe Bosh::CloudStackCloud::StemcellCreator do
       cloud.should_receive(:detach_volume).with(server, volume)
 
       cloud.compute.snapshots.should_receive(:create).with({:volume_id => "v-xxxxxxxx"}).and_return(snapshot)
-      creator.should_receive(:wait_resource).with(snapshot, :backedup, :state, false, 100)
+      creator.should_receive(:wait_resource).with(snapshot, :backedup, :state, false, 3, 100)
 
       job = generate_job
       cloud.compute.should_receive(:create_template).with(image_params).and_return({"createtemplateresponse" => {"jobid" => "j-xxxxxx"}})

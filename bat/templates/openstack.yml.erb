@@ -23,7 +23,6 @@ update:
   max_in_flight: <%= properties.max_in_flight || 1 %>
 
 networks:
-
 - name: static
   type: vip
   cloud_properties: {}
@@ -42,29 +41,16 @@ networks:
       - <%= range %>
       <% end %>
     gateway: <%= properties.network.gateway %>
-    dns:
-      <% if_p('dns_nameserver') do |dns_nameserver| %>
-      - <%= dns_nameserver %>
-      <% end %>
-      <% if_p('network.dns') do |dns| %>
-      - <%= dns %>
-      <% end %>
+    dns: <%= p('dns').inspect %>
     cloud_properties:
       security_groups: <%= p('network.cloud_properties.security_groups') %>
       net_id: <%= p('network.cloud_properties.net_id') %>
   <% else %>
-  dns:
-    <% if_p('dns_nameserver') do |dns_nameserver| %>
-    - <%= dns_nameserver %>
-    <% end %>
-    <% if_p('network.dns') do |dns| %>
-    - <%= dns %>
-    <% end %>
+  dns: <%= p('dns').inspect %>
   cloud_properties:
     security_groups: <%= p('network.cloud_properties.security_groups') %>
     net_id: <%= p('network.cloud_properties.net_id') %>
   <% end %>
-
 
 resource_pools:
   - name: common
@@ -95,10 +81,16 @@ jobs:
     networks:
       - name: default
         default: [dns, gateway]
-      <% if properties.use_static_ip %>
+      <% if p('network.type') == 'manual' %>
+        static_ips:
+        <% if properties.use_static_ip %>
+          - <%= properties.deployment_static_ip %>
+        <% end %>
+      <% end %>
+      <% if properties.use_vip %>
       - name: static
         static_ips:
-          - <%= properties.static_ip %>
+          - <%= properties.vip %>
       <% end %>
 
 properties:

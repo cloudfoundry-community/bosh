@@ -32,7 +32,8 @@ def mock_cloud_options
       'api_key' => 'admin',
       'secret_access_key' => 'foobar',
       'default_zone' => 'foobar-1a',
-      'state_timeout' => 0.1
+      'state_timeout' => 0.1,
+      'wait_resource_poll_interval' => 3
     },
     'registry' => {
       'endpoint' => 'localhost:42288',

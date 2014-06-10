@@ -1,6 +1,8 @@
 package action
 
 import (
+	"errors"
+
 	bosherr "bosh/errors"
 	boshjobsuper "bosh/jobsupervisor"
 )
@@ -20,8 +22,12 @@ func (a StartAction) IsAsynchronous() bool {
 	return false
 }
 
-func (s StartAction) Run() (value interface{}, err error) {
-	err = s.jobSupervisor.Start()
+func (a StartAction) IsPersistent() bool {
+	return false
+}
+
+func (a StartAction) Run() (value interface{}, err error) {
+	err = a.jobSupervisor.Start()
 	if err != nil {
 		err = bosherr.WrapError(err, "Starting Monitored Services")
 		return
@@ -29,4 +35,12 @@ func (s StartAction) Run() (value interface{}, err error) {
 
 	value = "started"
 	return
+}
+
+func (a StartAction) Resume() (interface{}, error) {
+	return nil, errors.New("not supported")
+}
+
+func (a StartAction) Cancel() error {
+	return errors.New("not supported")
 }

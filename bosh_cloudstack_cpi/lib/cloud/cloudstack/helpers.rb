@@ -65,8 +65,9 @@ module Bosh::CloudStackCloud
     # @param [Array<Symbol>] target_state Resource's state desired
     # @param [Symbol] state_method Resource's method to fetch state
     # @param [Boolean] allow_notfound true if resource could be not found
+    # @param [Integer] interval
     # @param [Integer] time_out Time to wait for completion
-    def wait_resource(resource, target_state, state_method = :state, allow_notfound = false, time_out = @state_timeout)
+    def wait_resource(resource, target_state, state_method = :state, allow_notfound = false, wait_resource_poll_interval = @wait_resource_poll_interval, time_out = @state_timeout)
 
       started_at = Time.now
       desc = resource.class.name.split("::").last.to_s + " `" + resource.id.to_s + "'"
@@ -101,6 +102,7 @@ module Bosh::CloudStackCloud
         # waiting if we're in these states. Alternatively we could introduce a
         # set of 'loop breaker' states but that doesn't seem very helpful
         # at the moment
+        require File.join("fog", "cloudstack", "models", "compute", "job")
         if (state == :error || state == :failed || state == :killed) ||
            (resource.instance_of?(Fog::Compute::Cloudstack::Job) && state == :"2")
           cloud_error("#{desc} state is #{state}, expected #{target_state.join(", ")}")
@@ -108,7 +110,8 @@ module Bosh::CloudStackCloud
 
         break if target_state.include?(state)
 
-        sleep(1)
+        sleep(wait_resource_poll_interval)
+
       end
 
       if @logger
@@ -118,12 +121,12 @@ module Bosh::CloudStackCloud
     end
 
     def wait_job(job)
-      wait_resource(job, :"1", :job_status, false)
+      wait_resource(job, :"1", :job_status, false, @wait_resource_poll_interval)
       job.job_result
     end
 
     def wait_job_volume(job)
-      wait_resource(job, :"1", :job_status, false, @state_timeout_volume)
+      wait_resource(job, :"1", :job_status, false, @wait_resource_poll_interval, @state_timeout_volume)
       job.job_result
     end
 

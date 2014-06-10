@@ -8,7 +8,7 @@ module Bosh::Dev
     def initialize(env, options = {})
       @env = env
       @shell = Bosh::Core::Shell.new
-      @path_root = options.fetch(:path_root) { env.fetch('FAKE_MNT', '/mnt') }
+      @path_root = options.fetch(:path_root) { env.fetch('WORKSPACE', '/tmp') }
     end
 
     def path
@@ -22,6 +22,13 @@ module Bosh::Dev
     def push
       git_repo_updater = Bosh::Dev::GitRepoUpdater.new
       git_repo_updater.update_directory(path)
+    end
+
+    def update_and_push
+      # git pull will work in a git repository
+      # unless local changes conflict with upstream changes
+      update_repo
+      push
     end
 
     private

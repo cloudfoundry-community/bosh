@@ -1,14 +1,15 @@
 package action_test
 
 import (
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
 	. "bosh/agent/action"
 	boshassert "bosh/assert"
 	boshlog "bosh/logger"
 	fakeplatform "bosh/platform/fakes"
 	boshsettings "bosh/settings"
 	fakesettings "bosh/settings/fakes"
-	. "github.com/onsi/ginkgo"
-	"github.com/stretchr/testify/assert"
 )
 
 func init() {
@@ -20,14 +21,19 @@ func init() {
 
 		BeforeEach(func() {
 			platform = fakeplatform.NewFakePlatform()
-			logger = boshlog.NewLogger(boshlog.LEVEL_NONE)
+			logger = boshlog.NewLogger(boshlog.LevelNone)
 		})
 
 		It("list disk should be synchronous", func() {
 			settings := &fakesettings.FakeSettingsService{}
-
 			action := NewListDisk(settings, platform, logger)
-			assert.False(GinkgoT(), action.IsAsynchronous())
+			Expect(action.IsAsynchronous()).To(BeFalse())
+		})
+
+		It("is not persistent", func() {
+			settings := &fakesettings.FakeSettingsService{}
+			action := NewListDisk(settings, platform, logger)
+			Expect(action.IsPersistent()).To(BeFalse())
 		})
 
 		It("list disk run", func() {
@@ -44,8 +50,8 @@ func init() {
 
 			action := NewListDisk(settings, platform, logger)
 			value, err := action.Run()
-			assert.NoError(GinkgoT(), err)
-			boshassert.MatchesJsonString(GinkgoT(), value, `["volume-2","volume-3"]`)
+			Expect(err).ToNot(HaveOccurred())
+			boshassert.MatchesJSONString(GinkgoT(), value, `["volume-2","volume-3"]`)
 		})
 	})
 }

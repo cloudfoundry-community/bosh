@@ -19,7 +19,7 @@ module Bat
       # It is used for negative testing.
       @spec['properties']['batlight'] ||= {}
       @spec['properties']['batlight']['missing'] = 'nope'
-      @spec['properties']['dns_nameserver'] = bosh_dns_host if bosh_dns_host
+      @spec['properties']['dns'] = [@env.dns_host]
     end
 
     # if with_deployment() is called without a block, it is up to the caller to
@@ -85,12 +85,32 @@ module Bat
       @spec['properties']['name'] = name
     end
 
+    def use_additional_dns_server(dns_server)
+      @spec['properties']['dns'] = [dns_server, @env.dns_host]
+    end
+
     def deployment_name
       @spec.fetch('properties', {}).fetch('name', 'bat')
     end
 
+    def use_vip
+      @spec['properties']['use_vip'] = true
+    end
+
+    def no_vip
+      @spec['properties']['use_vip'] = false
+    end
+
+    def public_ip
+      # For AWS and OpenStack, the elastic IP is the public IP
+      # For vSphere and vCloud, the static_ip is the public IP
+      @spec['properties']['vip'] || @spec['properties']['deployment_static_ip']
+    end
+
     def use_static_ip
       @spec['properties']['use_static_ip'] = true
+      @spec['properties']['deployment_static_ip'] = static_ip
+      @spec['properties']['mbus'] = mbus_url(static_ip)
     end
 
     def no_static_ip
@@ -99,6 +119,16 @@ module Bat
 
     def static_ip
       @spec['properties']['static_ip']
+    end
+
+    def use_second_static_ip
+      @spec['properties']['use_static_ip'] = true
+      @spec['properties']['deployment_static_ip'] = second_static_ip
+      @spec['properties']['mbus'] = mbus_url(second_static_ip)
+    end
+
+    def second_static_ip
+      @spec['properties']['second_static_ip']
     end
 
     def use_persistent_disk(size)
@@ -121,9 +151,18 @@ module Bat
       @spec['properties']['batlight']['fail'] = 'control'
     end
 
+    def dynamic_network?
+      network_type == 'dynamic'
+    end
+
+    def network_type
+      @spec['properties'].fetch('network', {}).fetch('type', nil)
+    end
+
     def get_task_id(output, state = 'done')
-      match = output.match(/Task (\d+) #{state}/)
-      match.should_not be_nil
+      task_regex = /Task (\d+) #{state}/
+      expect(output).to match(task_regex)
+      match = output.match(task_regex)
       match[1]
     end
 
@@ -151,6 +190,10 @@ module Bat
     end
 
     private
+
+    def mbus_url(ip)
+      "nats://nats:0b450ada9f830085e2cdeff6@#{ip}:4222"
+    end
 
     def spec
       @spec ||= {}

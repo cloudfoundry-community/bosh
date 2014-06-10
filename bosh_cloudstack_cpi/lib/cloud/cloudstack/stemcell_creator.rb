@@ -12,6 +12,7 @@ module Bosh::CloudStackCloud
       @cloud = cloud
       @state_timeout = cloud.state_timeout
       @state_timeout_volume = cloud.state_timeout_volume
+      @wait_resource_poll_interval = cloud.wait_resource_poll_interval
     end
 
     def create(volume, device, image_path)
@@ -26,7 +27,7 @@ module Bosh::CloudStackCloud
       cloud.detach_volume(volume.server, volume)
 
       snapshot = volume.service.snapshots.create({:volume_id => volume.id})
-      wait_resource(snapshot, :backedup, :state, false, @state_timeout_volume)
+      wait_resource(snapshot, :backedup, :state, false, @wait_resource_poll_interval, @state_timeout_volume)
 
       # TODO create fog model
       params = image_params(snapshot.id, volume.service)

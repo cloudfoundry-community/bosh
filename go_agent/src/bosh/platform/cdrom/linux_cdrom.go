@@ -13,7 +13,6 @@ type LinuxCdrom struct {
 }
 
 func NewLinuxCdrom(devicePath string, udev boshudev.UdevDevice, runner boshsys.CmdRunner) (cdrom LinuxCdrom) {
-
 	cdrom = LinuxCdrom{
 		udev:       udev,
 		devicePath: devicePath,
@@ -35,7 +34,7 @@ func (cdrom LinuxCdrom) WaitForMedia() (err error) {
 }
 
 func (cdrom LinuxCdrom) Mount(mountPath string) (err error) {
-	_, stderr, err := cdrom.runner.RunCommand("mount", cdrom.devicePath, mountPath)
+	_, stderr, _, err := cdrom.runner.RunCommand("mount", cdrom.devicePath, mountPath)
 	if err != nil {
 		err = bosherr.WrapError(err, "Mounting CDROM: %s", stderr)
 	}
@@ -43,7 +42,7 @@ func (cdrom LinuxCdrom) Mount(mountPath string) (err error) {
 }
 
 func (cdrom LinuxCdrom) Unmount() (err error) {
-	_, stderr, err := cdrom.runner.RunCommand("umount", cdrom.devicePath)
+	_, stderr, _, err := cdrom.runner.RunCommand("umount", cdrom.devicePath)
 	if err != nil {
 		err = bosherr.WrapError(err, "Unmounting CDROM: %s", stderr)
 	}
@@ -51,7 +50,7 @@ func (cdrom LinuxCdrom) Unmount() (err error) {
 }
 
 func (cdrom LinuxCdrom) Eject() (err error) {
-	_, stderr, err := cdrom.runner.RunCommand("eject", cdrom.devicePath)
+	_, stderr, _, err := cdrom.runner.RunCommand("eject", cdrom.devicePath)
 	if err != nil {
 		err = bosherr.WrapError(err, "Ejecting CDROM: %s", stderr)
 	}

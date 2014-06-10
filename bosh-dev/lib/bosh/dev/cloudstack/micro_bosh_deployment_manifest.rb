@@ -72,6 +72,7 @@ module Bosh::Dev::Cloudstack
           'default_zone' => env['BOSH_CLOUDSTACK_DEFAULT_ZONE'],
           'state_timeout' => state_timeout,
           'state_timeout_volume' => state_timeout_volume,
+          'wait_resource_poll_interval' => 5,
           'connection_options' => {
             'connect_timeout' => connection_timeout,
           }

@@ -1,6 +1,8 @@
 package action
 
 import (
+	"errors"
+
 	bosherr "bosh/errors"
 	boshjobsuper "bosh/jobsupervisor"
 )
@@ -20,8 +22,12 @@ func (a StopAction) IsAsynchronous() bool {
 	return true
 }
 
-func (s StopAction) Run() (value interface{}, err error) {
-	err = s.jobSupervisor.Stop()
+func (a StopAction) IsPersistent() bool {
+	return false
+}
+
+func (a StopAction) Run() (value interface{}, err error) {
+	err = a.jobSupervisor.Stop()
 	if err != nil {
 		err = bosherr.WrapError(err, "Stopping Monitored Services")
 		return
@@ -29,4 +35,12 @@ func (s StopAction) Run() (value interface{}, err error) {
 
 	value = "stopped"
 	return
+}
+
+func (a StopAction) Resume() (interface{}, error) {
+	return nil, errors.New("not supported")
+}
+
+func (a StopAction) Cancel() error {
+	return errors.New("not supported")
 }

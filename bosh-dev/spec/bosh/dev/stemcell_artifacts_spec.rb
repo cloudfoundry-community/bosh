@@ -9,18 +9,23 @@ module Bosh::Dev
 
         described_class.should_receive(:new) do |version, definitions|
           expect(version).to eq('version')
-          expect(definitions.size).to eq(8)
+          expect(definitions.size).to eq(13)
 
-          matrix = definitions.map { |d| [d.infrastructure, d.operating_system, d.agent] }
+          matrix = definitions.map { |d| [d.infrastructure.name, d.operating_system.name, d.operating_system.version, d.agent.name] }
 
-          expect(matrix[0].map(&:name)).to eq(%w(vsphere   ubuntu ruby))
-          expect(matrix[1].map(&:name)).to eq(%w(vsphere   centos ruby))
-          expect(matrix[2].map(&:name)).to eq(%w(aws       ubuntu ruby))
-          expect(matrix[3].map(&:name)).to eq(%w(aws       centos ruby))
-          expect(matrix[4].map(&:name)).to eq(%w(openstack ubuntu ruby))
-          expect(matrix[5].map(&:name)).to eq(%w(openstack centos ruby))
-          expect(matrix[6].map(&:name)).to eq(%w(cloudstack ubuntu ruby))
-          expect(matrix[7].map(&:name)).to eq(%w(cloudstack centos ruby))
+          expect(matrix[0]).to  eq(%w(vsphere ubuntu lucid ruby))
+          expect(matrix[1]).to  eq(%w(vsphere ubuntu lucid go))
+          expect(matrix[2]).to  eq(['vsphere', 'centos', nil, 'ruby'])
+          expect(matrix[3]).to  eq(['vsphere', 'centos', nil, 'go'])
+          expect(matrix[4]).to  eq(%w(aws ubuntu lucid ruby))
+          expect(matrix[5]).to  eq(%w(aws ubuntu lucid go))
+          expect(matrix[6]).to  eq(%w(aws ubuntu trusty go))
+          expect(matrix[7]).to eq(['aws', 'centos', nil, 'ruby'])
+          expect(matrix[8]).to eq(['aws', 'centos', nil, 'go'])
+          expect(matrix[9]).to eq(%w(openstack ubuntu lucid ruby))
+          expect(matrix[10]).to eq(['openstack', 'centos', nil, 'ruby'])
+          expect(matrix[11]).to eq(%w(cloudstack ubuntu lucid ruby))
+          expect(matrix[12]).to eq(['cloudstack', 'centos', nil, 'ruby'])
 
           artifacts
         end
@@ -34,9 +39,9 @@ module Bosh::Dev
       let(:version) { 123 }
       let(:definitions) do
         [
-          Bosh::Stemcell::Definition.for('vsphere', 'ubuntu', 'ruby'),
-          Bosh::Stemcell::Definition.for('openstack', 'centos', 'go'),
-          Bosh::Stemcell::Definition.for('cloudstack', 'centos', 'go'),
+          Bosh::Stemcell::Definition.for('vsphere', 'ubuntu', 'lucid', 'ruby'),
+          Bosh::Stemcell::Definition.for('openstack', 'centos', nil, 'go'),
+          Bosh::Stemcell::Definition.for('cloudstack', 'centos', nil, 'go'),
         ]
       end
 
@@ -78,7 +83,7 @@ module Bosh::Dev
       context 'when definition includes aws' do
         let(:definitions) do
           [
-            Bosh::Stemcell::Definition.for('aws', 'ubuntu', 'ruby')
+            Bosh::Stemcell::Definition.for('aws', 'ubuntu', 'lucid', 'ruby')
           ]
         end
 

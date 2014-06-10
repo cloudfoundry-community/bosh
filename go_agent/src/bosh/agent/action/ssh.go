@@ -1,12 +1,13 @@
 package action
 
 import (
+	"errors"
+	"path/filepath"
+
 	bosherr "bosh/errors"
 	boshplatform "bosh/platform"
 	boshsettings "bosh/settings"
 	boshdirs "bosh/settings/directories"
-	"errors"
-	"path/filepath"
 )
 
 type SshAction struct {
@@ -15,7 +16,11 @@ type SshAction struct {
 	dirProvider boshdirs.DirectoriesProvider
 }
 
-func NewSsh(settings boshsettings.Service, platform boshplatform.Platform, dirProvider boshdirs.DirectoriesProvider) (action SshAction) {
+func NewSsh(
+	settings boshsettings.Service,
+	platform boshplatform.Platform,
+	dirProvider boshdirs.DirectoriesProvider,
+) (action SshAction) {
 	action.settings = settings
 	action.platform = platform
 	action.dirProvider = dirProvider
@@ -23,6 +28,10 @@ func NewSsh(settings boshsettings.Service, platform boshplatform.Platform, dirPr
 }
 
 func (a SshAction) IsAsynchronous() bool {
+	return false
+}
+
+func (a SshAction) IsPersistent() bool {
 	return false
 }
 
@@ -53,7 +62,7 @@ func (a SshAction) setupSsh(params SshParams) (value interface{}, err error) {
 		return
 	}
 
-	err = a.platform.AddUserToGroups(params.User, []string{boshsettings.VCAP_USERNAME, boshsettings.ADMIN_GROUP})
+	err = a.platform.AddUserToGroups(params.User, []string{boshsettings.VCAPUsername, boshsettings.AdminGroup})
 	if err != nil {
 		err = bosherr.WrapError(err, "Adding user to groups")
 		return
@@ -65,7 +74,7 @@ func (a SshAction) setupSsh(params SshParams) (value interface{}, err error) {
 		return
 	}
 
-	defaultIp, found := a.settings.GetDefaultIp()
+	defaultIP, found := a.settings.GetDefaultIP()
 
 	if !found {
 		err = errors.New("No default ip could be found")
@@ -75,7 +84,7 @@ func (a SshAction) setupSsh(params SshParams) (value interface{}, err error) {
 	value = map[string]string{
 		"command": "setup",
 		"status":  "success",
-		"ip":      defaultIp,
+		"ip":      defaultIP,
 	}
 	return
 }
@@ -92,4 +101,12 @@ func (a SshAction) cleanupSsh(params SshParams) (value interface{}, err error) {
 		"status":  "success",
 	}
 	return
+}
+
+func (a SshAction) Resume() (interface{}, error) {
+	return nil, errors.New("not supported")
+}
+
+func (a SshAction) Cancel() error {
+	return errors.New("not supported")
 }
