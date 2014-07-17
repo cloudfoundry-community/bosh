@@ -63,6 +63,7 @@ module Bosh::CloudStackCloud
         @logger.error(e)
         cloud_error("Unable to connect to the CloudStack Compute API. Check task debug log for details.")
       end
+
       @default_zone = @compute.zones.find { |zone| zone.name == @fog_properties["default_zone"] }
       cloud_error("Unable to find the zone named #{@fog_properties["default_zone"]}.") if @default_zone.nil?
       @metadata_server = @fog_properties["metadata_server"] ||
@@ -202,7 +203,7 @@ module Bosh::CloudStackCloud
 
         availability_zone = select_availability_zone(disk_locality, resource_pool["availability_zone"] || @default_zone.name)
         if availability_zone
-          selected_zone = compute.zones.find { |zone| zone.name == availability_zone }
+          selected_zone = @compute.zones.find { |zone| zone.name == availability_zone }
           cloud_error("Availability zone `#{availability_zone}' not found") if selected_zone.nil?
           @logger.debug("Using availability zone: `#{selected_zone.name}' (#{selected_zone.id})")
           server_params[:zone_id] = selected_zone.id

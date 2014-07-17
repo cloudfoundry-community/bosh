@@ -35,17 +35,17 @@ properties:
     description: Port that the director listens on
     default: 25556
   director.nginx.workers:
-    default: 2
     description: Number of nginx workers for director
+    default: 2
   director.timeout:
-    default: 7200
     description: Timeout for connection from bosh CLI to nginx
+    default: 7200
   director.proxy_timeout:
-    default: 900
     description: Timeout for proxy connection from nginx to director
+    default: 900
   director.max_upload_size:
-    default: 5000m
     description: Max allowed file size for upload
+    default: 5000m
   director.ssl.cert:
     description: SSL Certificate for director (PEM encoded)
   director.ssl.key:
@@ -169,12 +169,19 @@ properties:
     description: Host of blobstore server used by simple blobstore plugin
   blobstore.use_ssl:
     description: Whether the simple blobstore plugin should use SSL to connect to the blobstore server
+    default: true
   blobstore.s3_port:
     description: Port of blobstore server used by s3 blobstore plugin
     default: 443
   blobstore.s3_force_path_style:
     description: Whether s3 blobstore plugin will always use path style for bucket access
     default: false
+  blobstore.ssl_verify_peer:
+    description: Verify the SSL certificate used on the blobstore?
+    default: true
+  blobstore.s3_multipart_threshold:
+    description: Byte threshold at which blob uploads should be broken into multi-part FORM uploads instead of single PUT
+    default: 16777216
   blobstore.director.user:
     description: Username director uses to connect to blobstore used by simple blobstore plugin
   blobstore.director.password:
@@ -206,6 +213,26 @@ properties:
     description: AWS access_key_id used for the compiled package cache
   compiled_package_cache.options.secret_access_key:
     description: AWS secret_access_key used for the compiled package cache
+  compiled_package_cache.options.port:
+    description: Port of blobstore server used for compiled package cache
+    default: 25250
+  compiled_package_cache.options.host:
+    description: Host of blobstore server used for compiled package cache
+  compiled_package_cache.options.use_ssl:
+    description: Whether the simple blobstore plugin should use SSL to connect to the blobstore server
+    default: true
+  compiled_package_cache.options.ssl_verify_peer:
+    description: Verify the SSL certificate used on the blobstore?
+    default: true
+  compiled_package_cache.options.s3_port:
+    description: Port of blobstore server used by s3 blobstore plugin
+    default: 443
+  compiled_package_cache.options.s3_force_path_style:
+    description: Whether s3 blobstore plugin will always use path style for bucket access
+    default: false
+  compiled_package_cache.options.s3_multipart_threshold:
+    description: Byte threshold at which blob uploads should be broken into multi-part FORM uploads instead of single PUT
+    default: 16777216
   compiled_package_cache.options.swift_provider:
     description:  OpenStack Swift provider (supported providers are hp, openstack and rackspace)
   compiled_package_cache.options.container_name:
@@ -239,6 +266,12 @@ properties:
     description: List of ntp server IPs
     default: []
 
+  # Cpi
+  external_cpi.enabled:
+    description: Enables external cpi
+    default: false
+  external_cpi.name:
+    description: Name of external cpi package
   agent.blobstore.access_key_id:
     description: AWS access_key_id for agent used by s3 blobstore plugin
   agent.blobstore.secret_access_key:
@@ -247,6 +280,20 @@ properties:
     description: Address for agent to connect to blobstore server used by simple blobstore plugin
   agent.blobstore.port:
     description: Port for agent to connect to blobstore server used by simple blobstore plugin
+  agent.blobstore.host:
+    description: Host of blobstore server used by simple blobstore plugin
+  agent.blobstore.use_ssl:
+    description: Whether the simple blobstore plugin should use SSL to connect to the blobstore server
+    default: true
+  agent.blobstore.ssl_verify_peer:
+    description: Verify the SSL certificate used on the blobstore?
+    default: true
+  agent.blobstore.s3_force_path_style:
+    description: Whether s3 blobstore plugin will always use path style for bucket access
+    default: false
+  agent.blobstore.s3_multipart_threshold:
+    description: Byte threshold at which blob uploads should be broken into multi-part FORM uploads instead of single PUT
+    default: 16777216
   agent.nats.address:
     description: Address for agent to connect to nats
   registry.address:
@@ -286,6 +333,9 @@ properties:
   openstack.state_timeout:
     description: Timeout (in seconds) for OpenStack resources desired state (optional, by default 300)
     default: 300
+  openstack.boot_from_volume:
+    description: Boot from volume
+    default: false
   openstack.stemcell_public_visibility:
     description: Set public visibility for stemcells (optional, false by default)
     default: false

@@ -16,7 +16,7 @@ describe Bosh::CloudStackCloud::Cloud do
     unique_name = SecureRandom.uuid
     disk_params = {
       :name => "volume-#{unique_name}",
-      :zone_id => mock_cloud_options['cloudstack']['default_zone'],
+      :zone_id => mock_cloud_options['properties']['cloudstack']['default_zone'],
       :disk_offering_id => disk_offerings[2].id,
     }
     volume = double("volume", :id => "v-foobar")
@@ -60,7 +60,7 @@ describe Bosh::CloudStackCloud::Cloud do
     unique_name = SecureRandom.uuid
     disk_params = {
       :name => "volume-#{unique_name}",
-      :zone_id => mock_cloud_options['cloudstack']['default_zone'],
+      :zone_id => mock_cloud_options['properties']['cloudstack']['default_zone'],
       :disk_offering_id => disk_offerings[0].id,
     }
     volume = double("volume", :id => "v-foobar")

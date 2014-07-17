@@ -1,40 +1,51 @@
 package blobstore
 
 import (
+	"fmt"
+	"path/filepath"
+
 	bosherr "bosh/errors"
+	boshlog "bosh/logger"
 	boshplatform "bosh/platform"
 	boshsettings "bosh/settings"
 	boshdir "bosh/settings/directories"
 	boshuuid "bosh/uuid"
-	"fmt"
-	"path/filepath"
 )
 
 type Provider struct {
 	platform    boshplatform.Platform
 	dirProvider boshdir.DirectoriesProvider
 	uuidGen     boshuuid.Generator
+	logger      boshlog.Logger
 }
 
-func NewProvider(platform boshplatform.Platform, dirProvider boshdir.DirectoriesProvider) (p Provider) {
+func NewProvider(
+	platform boshplatform.Platform,
+	dirProvider boshdir.DirectoriesProvider,
+	logger boshlog.Logger,
+) (p Provider) {
 	p.uuidGen = boshuuid.NewGenerator()
 	p.platform = platform
 	p.dirProvider = dirProvider
+	p.logger = logger
 	return
 }
 
 func (p Provider) Get(settings boshsettings.Blobstore) (blobstore Blobstore, err error) {
-	externalConfigFile := filepath.Join(p.dirProvider.EtcDir(), fmt.Sprintf("blobstore-%s.json", settings.Type))
+	configName := fmt.Sprintf("blobstore-%s.json", settings.Type)
+	externalConfigFile := filepath.Join(p.dirProvider.EtcDir(), configName)
 
 	switch settings.Type {
 	case boshsettings.BlobstoreTypeDummy:
 		blobstore = newDummyBlobstore()
+
 	case boshsettings.BlobstoreTypeLocal:
-		blobstore = newLocalBlobstore(
-			settings.Options,
+		blobstore = NewLocalBlobstore(
 			p.platform.GetFs(),
 			p.uuidGen,
+			settings.Options,
 		)
+
 	default:
 		blobstore = NewExternalBlobstore(
 			settings.Type,
@@ -46,7 +57,9 @@ func (p Provider) Get(settings boshsettings.Blobstore) (blobstore Blobstore, err
 		)
 	}
 
-	blobstore = NewSha1Verifiable(blobstore)
+	blobstore = NewSHA1VerifiableBlobstore(blobstore)
+
+	blobstore = NewRetryableBlobstore(blobstore, 3, p.logger)
 
 	err = blobstore.Validate()
 	if err != nil {

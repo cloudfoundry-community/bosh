@@ -20,6 +20,7 @@ module Bosh::Blobstore
         end
       end
       Thread.start { @server.start }
+      sleep(10)
       tries = 0
       loop do
         tries += 1

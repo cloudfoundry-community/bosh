@@ -96,10 +96,6 @@ func (p linux) GetRunner() (runner boshsys.CmdRunner) {
 	return p.cmdRunner
 }
 
-func (p linux) GetStatsCollector() (statsCollector boshstats.StatsCollector) {
-	return p.collector
-}
-
 func (p linux) GetCompressor() (runner boshcmd.Compressor) {
 	return p.compressor
 }
@@ -134,7 +130,7 @@ func (p linux) SetupManualNetworking(networks boshsettings.Networks) (err error)
 }
 
 func (p linux) SetupDhcp(networks boshsettings.Networks) (err error) {
-	return p.netManager.SetupDhcp(networks)
+	return p.netManager.SetupDhcp(networks, nil)
 }
 
 func (p linux) SetupRuntimeConfiguration() (err error) {
@@ -219,7 +215,7 @@ func (p linux) findEphemeralUsersMatching(reg *regexp.Regexp) (matchingUsers []s
 	return
 }
 
-func (p linux) SetupSsh(publicKey, username string) (err error) {
+func (p linux) SetupSSH(publicKey, username string) (err error) {
 	homeDir, err := p.fs.HomeDir(username)
 	if err != nil {
 		err = bosherr.WrapError(err, "Finding home dir for user")
@@ -628,23 +624,25 @@ func (p linux) IsPersistentDiskMounted(path string) (bool, error) {
 	return p.diskManager.GetMounter().IsMounted(realPath)
 }
 
-func (p linux) StartMonit() (err error) {
-	_, _, _, err = p.cmdRunner.RunCommand("sv", "up", "monit")
+func (p linux) StartMonit() error {
+	_, _, _, err := p.cmdRunner.RunCommand("sv", "up", "monit")
 	if err != nil {
-		err = bosherr.WrapError(err, "Shelling out to sv")
+		return bosherr.WrapError(err, "Shelling out to sv")
 	}
-	return
+
+	return nil
 }
 
-func (p linux) SetupMonitUser() (err error) {
+func (p linux) SetupMonitUser() error {
 	monitUserFilePath := filepath.Join(p.dirProvider.BaseDir(), "monit", "monit.user")
 	if !p.fs.FileExists(monitUserFilePath) {
-		err = p.fs.WriteFileString(monitUserFilePath, "vcap:random-password")
+		err := p.fs.WriteFileString(monitUserFilePath, "vcap:random-password")
 		if err != nil {
-			err = bosherr.WrapError(err, "Writing monit user file")
+			return bosherr.WrapError(err, "Writing monit user file")
 		}
 	}
-	return
+
+	return nil
 }
 
 func (p linux) GetMonitCredentials() (username, password string, err error) {
@@ -666,8 +664,17 @@ func (p linux) GetMonitCredentials() (username, password string, err error) {
 	return
 }
 
-func (p linux) GetDiskManager() (diskManager boshdisk.Manager) {
-	return p.diskManager
+func (p linux) PrepareForNetworkingChange() error {
+	err := p.fs.RemoveAll("/etc/udev/rules.d/70-persistent-net.rules")
+	if err != nil {
+		return bosherr.WrapError(err, "Removing network rules file")
+	}
+
+	return nil
+}
+
+func (p linux) GetDefaultNetwork() (boshsettings.Network, error) {
+	return p.netManager.GetDefaultNetwork()
 }
 
 func (p linux) calculateEphemeralDiskPartitionSizes(devicePath string) (swapSize, linuxSize uint64, err error) {

@@ -25,6 +25,9 @@ module Bosh::Dev::Sandbox
     HM_CONFIG = 'health_monitor.yml'
     HM_CONF_TEMPLATE = File.join(ASSETS_DIR, 'health_monitor.yml.erb')
 
+    EXTERNAL_CPI = 'cpi'
+    EXTERNAL_CPI_TEMPLATE = File.join(ASSETS_DIR, 'cpi.erb')
+
     DIRECTOR_PATH = File.expand_path('bosh-director', REPO_ROOT)
     MIGRATIONS_PATH = File.join(DIRECTOR_PATH, 'db', 'migrations')
 
@@ -41,12 +44,15 @@ module Bosh::Dev::Sandbox
 
     attr_reader :cpi
 
+    attr_accessor :external_cpi_enabled
+
     def self.from_env
       db_opts = {
         type: ENV['DB'] || 'postgresql',
         user: ENV['TRAVIS'] ? 'travis' : 'root',
         password: ENV['TRAVIS'] ? '' : 'password',
       }
+
       agent_type = ENV['BOSH_INTEGRATION_AGENT_TYPE'] || 'ruby'
 
       new(
@@ -142,14 +148,24 @@ module Bosh::Dev::Sandbox
       setup_sandbox_root
 
       @redis_process.start
+      sleep(15)
       @redis_socket_connector.try_to_connect
 
       @nats_process.start
+      sleep(15)
       @nats_socket_connector.try_to_connect
 
       FileUtils.mkdir_p(cloud_storage_dir)
       FileUtils.rm_rf(logs_path)
       FileUtils.mkdir_p(logs_path)
+
+      @database.create_db
+      sleep(15)
+      @database_created = true
+      @database_migrator.migrate
+
+      reconfigure_director
+      @worker_processes.each(&:start)
     end
 
     def reset(name)
@@ -159,8 +175,32 @@ module Bosh::Dev::Sandbox
 
     def reconfigure_director
       @director_process.stop
+
       write_in_sandbox(DIRECTOR_CONFIG, load_config_template(DIRECTOR_CONF_TEMPLATE))
+
+      FileUtils.rm_rf(director_tmp_path)
+      FileUtils.mkdir_p(director_tmp_path)
+      File.open(File.join(director_tmp_path, 'state.json'), 'w') do |f|
+        f.write(Yajl::Encoder.encode('uuid' => DIRECTOR_UUID))
+      end
+
       @director_process.start
+      sleep(15)
+
+      begin
+        # CI does not have enough time to start bosh-director
+        # for some parallel tests; increasing to 60 secs (= 300 tries).
+        @director_socket_connector.try_to_connect(300)
+      rescue
+        output_service_log(@director_process)
+        raise
+      end
+    end
+
+    def reconfigure_workers
+      @worker_processes.each(&:stop)
+      write_in_sandbox(DIRECTOR_CONFIG, load_config_template(DIRECTOR_CONF_TEMPLATE))
+      @worker_processes.each(&:start)
     end
 
     def reconfigure_health_monitor(erb_template)
@@ -193,6 +233,9 @@ module Bosh::Dev::Sandbox
       FileUtils.rm_rf(director_tmp_path)
       FileUtils.rm_rf(agent_tmp_path)
       FileUtils.rm_rf(blobstore_storage_dir)
+
+      # Hardcoded in bosh/spec/assets/test_release_template/config/final.yml
+      FileUtils.rm_rf('/tmp/bosh-integration-tests')
     end
 
     def run
@@ -229,48 +272,50 @@ module Bosh::Dev::Sandbox
       @sandbox_root ||= Dir.mktmpdir.tap { |p| @logger.info("sandbox=#{p}") }
     end
 
+    def external_cpi_config
+      {
+        exec_path: File.join(REPO_ROOT, 'bosh-director', 'bin', 'dummy_cpi'),
+        director_path: sandbox_path(EXTERNAL_CPI),
+        config_path: sandbox_path(DIRECTOR_CONFIG),
+        env_path: ENV['PATH']
+      }
+    end
+
     private
 
     def do_reset(name)
       @cpi.kill_agents
-      @worker_processes.each(&:stop)
-      @director_process.stop
-      @health_monitor_process.stop
 
       Redis.new(host: 'localhost', port: redis_port).flushdb
 
-      @database.drop_db if @database_created
-      @database_created = true
-
-      @database.create_db
-      @database_migrator.migrate
+      @database.truncate_db
 
       FileUtils.rm_rf(blobstore_storage_dir)
       FileUtils.mkdir_p(blobstore_storage_dir)
       FileUtils.rm_rf(director_tmp_path)
       FileUtils.mkdir_p(director_tmp_path)
 
-      File.open(File.join(director_tmp_path, 'state.json'), 'w') do |f|
-        f.write(Yajl::Encoder.encode('uuid' => DIRECTOR_UUID))
-      end
-
-      write_in_sandbox(DIRECTOR_CONFIG, load_config_template(DIRECTOR_CONF_TEMPLATE))
-      write_in_sandbox(HM_CONFIG, load_config_template(HM_CONF_TEMPLATE))
-
-      @director_process.start
-      @worker_processes.each(&:start)
-
-      # CI does not have enough time to start bosh-director
-      # for some parallel tests; increasing to 60 secs (= 300 tries).
-      @director_socket_connector.try_to_connect(300)
+      reconfigure_director if director_configuration_changed?
     end
 
     def setup_sandbox_root
       write_in_sandbox(DIRECTOR_CONFIG, load_config_template(DIRECTOR_CONF_TEMPLATE))
       write_in_sandbox(HM_CONFIG, load_config_template(HM_CONF_TEMPLATE))
       write_in_sandbox(REDIS_CONFIG, load_config_template(REDIS_CONF_TEMPLATE))
+      write_in_sandbox(EXTERNAL_CPI, load_config_template(EXTERNAL_CPI_TEMPLATE))
+      FileUtils.chmod(0755, sandbox_path(EXTERNAL_CPI))
       FileUtils.mkdir_p(sandbox_path('redis'))
       FileUtils.mkdir_p(blobstore_storage_dir)
+    end
+
+    def director_configuration_changed?
+      read_from_sandbox(DIRECTOR_CONFIG) != load_config_template(DIRECTOR_CONF_TEMPLATE)
+    end
+
+    def read_from_sandbox(filename)
+      Dir.chdir(sandbox_root) do
+        File.read(filename)
+      end
     end
 
     def write_in_sandbox(filename, contents)
@@ -288,10 +333,21 @@ module Bosh::Dev::Sandbox
     end
 
     def get_named_port(name)
-      # I don't want to optimize for look-up speed, we only have 5 named ports anyway
       @port_names ||= []
       @port_names << name unless @port_names.include?(name)
       61000 + @test_env_number * 100 + @port_names.index(name)
+    end
+
+    DEBUG_HEADER = '*' * 20
+
+    def output_service_log(service)
+      @logger.error("#{DEBUG_HEADER} start #{service.description} stdout #{DEBUG_HEADER}")
+      @logger.error(service.stdout_contents)
+      @logger.error("#{DEBUG_HEADER} end #{service.description} stdout #{DEBUG_HEADER}")
+
+      @logger.error("#{DEBUG_HEADER} start #{service.description} stderr #{DEBUG_HEADER}")
+      @logger.error(service.stderr_contents)
+      @logger.error("#{DEBUG_HEADER} end #{service.description} stderr #{DEBUG_HEADER}")
     end
 
     attr_reader :director_tmp_path, :dns_db_path, :task_logs_dir

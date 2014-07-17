@@ -3,7 +3,6 @@ package action_test
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/stretchr/testify/assert"
 
 	. "bosh/agent/action"
 	boshassert "bosh/assert"
@@ -13,94 +12,97 @@ import (
 	fakesettings "bosh/settings/fakes"
 )
 
-func testSshSetupWithGivenPassword(t assert.TestingT, expectedPwd string) {
-	settings := &fakesettings.FakeSettingsService{}
-	settings.DefaultIP = "ww.xx.yy.zz"
+func testSSHSetupWithGivenPassword(expectedPwd string) {
+	settingsService := &fakesettings.FakeSettingsService{}
+	settingsService.Settings.Networks = boshsettings.Networks{
+		"fake-net": boshsettings.Network{IP: "ww.xx.yy.zz"},
+	}
 
-	platform, action := buildSshAction(settings)
+	platform, action := buildSSHAction(settingsService)
 
-	expectedUser := "some-user"
-	expectedKey := "some public key content"
-
-	params := SshParams{
-		User:      expectedUser,
-		PublicKey: expectedKey,
+	params := SSHParams{
+		User:      "fake-user",
+		PublicKey: "fake-public-key",
 		Password:  expectedPwd,
 	}
 
 	response, err := action.Run("setup", params)
-	assert.NoError(t, err)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(response).To(Equal(SSHResult{
+		Command: "setup",
+		Status:  "success",
+		IP:      "ww.xx.yy.zz",
+	}))
 
-	assert.Equal(t, expectedUser, platform.CreateUserUsername)
-	assert.Equal(t, expectedPwd, platform.CreateUserPassword)
-	assert.Equal(t, "/foo/bosh_ssh", platform.CreateUserBasePath)
-	assert.Equal(t, []string{boshsettings.VCAPUsername, boshsettings.AdminGroup}, platform.AddUserToGroupsGroups[expectedUser])
-	assert.Equal(t, expectedKey, platform.SetupSshPublicKeys[expectedUser])
+	Expect(platform.CreateUserUsername).To(Equal("fake-user"))
+	Expect(platform.CreateUserPassword).To(Equal(expectedPwd))
+	Expect(platform.CreateUserBasePath).To(Equal("/foo/bosh_ssh"))
 
-	expectedJSON := map[string]interface{}{
-		"command": "setup",
-		"status":  "success",
-		"ip":      "ww.xx.yy.zz",
-	}
+	Expect(platform.AddUserToGroupsGroups["fake-user"]).To(Equal(
+		[]string{boshsettings.VCAPUsername, boshsettings.AdminGroup},
+	))
 
-	boshassert.MatchesJSONMap(t, response, expectedJSON)
+	Expect(platform.SetupSSHPublicKeys["fake-user"]).To(Equal("fake-public-key"))
 }
 
-func buildSshAction(settings boshsettings.Service) (*fakeplatform.FakePlatform, SshAction) {
+func buildSSHAction(settingsService boshsettings.Service) (*fakeplatform.FakePlatform, SSHAction) {
 	platform := fakeplatform.NewFakePlatform()
-	action := NewSsh(settings, platform, boshdirs.NewDirectoriesProvider("/foo"))
+	dirProvider := boshdirs.NewDirectoriesProvider("/foo")
+	action := NewSSH(settingsService, platform, dirProvider)
 	return platform, action
 }
-func init() {
-	Describe("Testing with Ginkgo", func() {
-		It("ssh should be synchronous", func() {
-			settings := &fakesettings.FakeSettingsService{}
-			_, action := buildSshAction(settings)
-			Expect(action.IsAsynchronous()).To(BeFalse())
-		})
 
-		It("is not persistent", func() {
-			settings := &fakesettings.FakeSettingsService{}
-			_, action := buildSshAction(settings)
-			Expect(action.IsPersistent()).To(BeFalse())
-		})
+var _ = Describe("SSHAction", func() {
+	var (
+		platform        *fakeplatform.FakePlatform
+		settingsService boshsettings.Service
+		action          SSHAction
+	)
 
+	BeforeEach(func() {
+		settingsService = &fakesettings.FakeSettingsService{}
+		platform, action = buildSSHAction(settingsService)
+	})
+
+	It("ssh should be synchronous", func() {
+		Expect(action.IsAsynchronous()).To(BeFalse())
+	})
+
+	It("is not persistent", func() {
+		Expect(action.IsPersistent()).To(BeFalse())
+	})
+
+	Describe("Run", func() {
 		It("ssh setup without default ip", func() {
-
-			settings := &fakesettings.FakeSettingsService{}
-			_, action := buildSshAction(settings)
-
-			params := SshParams{
+			params := SSHParams{
 				User:      "some-user",
 				Password:  "some-pwd",
 				PublicKey: "some-key",
 			}
+
 			_, err := action.Run("setup", params)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("No default ip"))
 		})
+
 		It("ssh setup with username and password", func() {
-
-			testSshSetupWithGivenPassword(GinkgoT(), "some-password")
+			testSSHSetupWithGivenPassword("some-password")
 		})
+
 		It("ssh setup without password", func() {
-
-			testSshSetupWithGivenPassword(GinkgoT(), "")
+			testSSHSetupWithGivenPassword("")
 		})
+
 		It("ssh run cleanup deletes ephemeral user", func() {
-
-			settings := &fakesettings.FakeSettingsService{}
-			platform, action := buildSshAction(settings)
-
-			params := SshParams{UserRegex: "^foobar.*"}
-			response, err := action.Run("cleanup", params)
+			response, err := action.Run("cleanup", SSHParams{UserRegex: "^foobar.*"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect("^foobar.*").To(Equal(platform.DeleteEphemeralUsersMatchingRegex))
+			Expect(platform.DeleteEphemeralUsersMatchingRegex).To(Equal("^foobar.*"))
 
+			// Make sure empty ip field is not included in the response
 			boshassert.MatchesJSONMap(GinkgoT(), response, map[string]interface{}{
 				"command": "cleanup",
 				"status":  "success",
 			})
 		})
 	})
-}
+})

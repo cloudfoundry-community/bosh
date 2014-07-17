@@ -9,17 +9,6 @@ describe VSphereCloud::VmCreator do
     let(:agent_env) { instance_double('VSphereCloud::AgentEnv') }
     let(:file_provider) { instance_double('VSphereCloud::FileProvider') }
 
-    context 'when the number of cpu is not a power of 2' do
-      subject(:creator) do
-        described_class.new(1024, 1024, 3, placer, vsphere_client, logger, cpi, agent_env, file_provider)
-      end
-      it 'raises an error  to work around a vCenter bug' do
-        expect {
-          creator.create(nil, nil, nil, [], {})
-        }.to raise_error('Number of vCPUs: 3 is not a power of 2.')
-      end
-    end
-
     context 'when the stemcell vm does not exist' do
       subject(:creator) do
         described_class.new(1024, 1024, 1, placer, vsphere_client, logger, cpi, agent_env, file_provider)
@@ -37,7 +26,7 @@ describe VSphereCloud::VmCreator do
 
     it 'chooses the placement based on memory, ephemeral and persistent disks' do
       creator = described_class.new(
-        1024, 10240000, 1, placer, vsphere_client, logger,
+        1024, 10240000, 3, placer, vsphere_client, logger,
         cpi, agent_env, file_provider
       )
 
@@ -118,8 +107,6 @@ describe VSphereCloud::VmCreator do
                     ).and_return(ephemeral_disk_config)
       allow(logger).to receive(:info)
       allow(cluster).to receive(:mob).with(no_args).and_return(double('cluster mob'))
-      add_cdrom_spec = double('configure env cdrom rv')
-      allow(agent_env).to receive(:configure_env_cdrom).with(datastore_mob, devices, '[datastore name] vm-vm_unique_name/env.iso').and_return(add_cdrom_spec)
 
       clone_vm_task = double('cloned vm task')
       allow(cpi).to receive(:clone_vm).with(
@@ -133,7 +120,7 @@ describe VSphereCloud::VmCreator do
           snapshot: current_snapshot,
           config: match_attributes(
             memory_mb: 1024,
-            num_cpus: 1,
+            num_cpus: 3,
             device_change: [ephemeral_disk_config, add_nic_spec, delete_nic_spec],
           ),
         },
@@ -142,13 +129,6 @@ describe VSphereCloud::VmCreator do
       allow(vsphere_client).to receive(:wait_for_task).with(clone_vm_task).and_return(vm_double)
       allow(vsphere_client).to receive(:get_properties).with(vm_double, VimSdk::Vim::VirtualMachine, ['config.hardware.device'], ensure_all: true).and_return(stemcell_properties)
       allow(cpi).to receive(:generate_agent_env).with("vm-vm_unique_name", vm_double, 'agent_id', network_env, disk_env).and_return({})
-
-      allow(vsphere_client).to receive(:reconfig_vm).with(
-        vm_double,
-        match_attributes(
-          device_change: [ add_cdrom_spec ],
-        ),
-      )
 
       vm_location = double('vm location')
       allow(cpi).to receive(:get_vm_location).with(

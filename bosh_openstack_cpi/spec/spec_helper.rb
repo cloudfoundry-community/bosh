@@ -1,6 +1,3 @@
-# Copyright (c) 2009-2013 VMware, Inc.
-# Copyright (c) 2012 Piston Cloud Computing, Inc.
-
 require File.expand_path('../../../spec/shared_spec_helper', __FILE__)
 
 require 'tmpdir'
@@ -10,45 +7,34 @@ include Archive::Tar
 
 require 'cloud/openstack'
 
-def internal_to(*args, &block)
-  example = describe *args, &block
-  klass = args[0]
-  if klass.is_a? Class
-    saved_private_instance_methods = klass.private_instance_methods
-    example.before do
-      klass.class_eval { public *saved_private_instance_methods }
-    end
-    example.after do
-      klass.class_eval { private *saved_private_instance_methods }
-    end
-  end
-end
-
 def mock_cloud_options
   {
-    'openstack' => {
-      'auth_url' => 'http://127.0.0.1:5000/v2.0',
-      'username' => 'admin',
-      'api_key' => 'nova',
-      'tenant' => 'admin',
-      'region' => 'RegionOne',
-      'state_timeout' => 0.1,
-      'wait_resource_poll_interval' => 3
-    },
-    'registry' => {
-      'endpoint' => 'localhost:42288',
-      'user' => 'admin',
-      'password' => 'admin'
-    },
-    'agent' => {
-      'foo' => 'bar',
-      'baz' => 'zaz'
+    'plugin' => 'openstack',
+    'properties' => {
+      'openstack' => {
+        'auth_url' => 'http://127.0.0.1:5000/v2.0',
+        'username' => 'admin',
+        'api_key' => 'nova',
+        'tenant' => 'admin',
+        'region' => 'RegionOne',
+        'state_timeout' => 0.1,
+        'wait_resource_poll_interval' => 3
+      },
+      'registry' => {
+        'endpoint' => 'localhost:42288',
+        'user' => 'admin',
+        'password' => 'admin'
+      },
+      'agent' => {
+        'foo' => 'bar',
+        'baz' => 'zaz'
+      }
     }
   }
 end
 
 def make_cloud(options = nil)
-  Bosh::OpenStackCloud::Cloud.new(options || mock_cloud_options)
+  Bosh::OpenStackCloud::Cloud.new(options || mock_cloud_options['properties'])
 end
 
 def mock_registry(endpoint = 'http://registry:3333')
@@ -70,6 +56,10 @@ def mock_cloud(options = nil)
   glance = double(Fog::Image)
   Fog::Image.stub(:new).and_return(glance)
 
+  volume = double(Fog::Volume)
+  volume.stub(:volumes).and_return(volumes)
+  Fog::Volume.stub(:new).and_return(volume)
+
   openstack = double(Fog::Compute)
 
   openstack.stub(:servers).and_return(servers)
@@ -85,7 +75,7 @@ def mock_cloud(options = nil)
 
   yield openstack if block_given?
 
-  Bosh::OpenStackCloud::Cloud.new(options || mock_cloud_options)
+  Bosh::OpenStackCloud::Cloud.new(options || mock_cloud_options['properties'])
 end
 
 def mock_glance(options = nil)
@@ -94,6 +84,9 @@ def mock_glance(options = nil)
   openstack = double(Fog::Compute)
   Fog::Compute.stub(:new).and_return(openstack)
 
+  volume = double(Fog::Volume)
+  Fog::Volume.stub(:new).and_return(volume)
+
   glance = double(Fog::Image)
   glance.stub(:images).and_return(images)
 
@@ -101,7 +94,7 @@ def mock_glance(options = nil)
 
   yield glance if block_given?
 
-  Bosh::OpenStackCloud::Cloud.new(options || mock_cloud_options)
+  Bosh::OpenStackCloud::Cloud.new(options || mock_cloud_options['properties'])
 end
 
 def dynamic_network_spec

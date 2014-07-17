@@ -6,10 +6,6 @@ import (
 	boshlog "bosh/logger"
 	boshcmd "bosh/platform/commands"
 	fakecmd "bosh/platform/commands/fakes"
-	boshdisk "bosh/platform/disk"
-	fakedisk "bosh/platform/disk/fakes"
-	boshstats "bosh/platform/stats"
-	fakestats "bosh/platform/stats/fakes"
 	boshvitals "bosh/platform/vitals"
 	fakevitals "bosh/platform/vitals/fakes"
 	boshsettings "bosh/settings"
@@ -19,14 +15,12 @@ import (
 )
 
 type FakePlatform struct {
-	Fs                 *fakesys.FakeFileSystem
-	Runner             *fakesys.FakeCmdRunner
-	FakeStatsCollector *fakestats.FakeStatsCollector
-	FakeCompressor     *fakecmd.FakeCompressor
-	FakeCopier         *fakecmd.FakeCopier
-	FakeVitalsService  *fakevitals.FakeService
-	FakeDiskManager    *fakedisk.FakeDiskManager
-	logger             boshlog.Logger
+	Fs                *fakesys.FakeFileSystem
+	Runner            *fakesys.FakeCmdRunner
+	FakeCompressor    *fakecmd.FakeCompressor
+	FakeCopier        *fakecmd.FakeCopier
+	FakeVitalsService *fakevitals.FakeService
+	logger            boshlog.Logger
 
 	DevicePathResolver boshdpresolv.DevicePathResolver
 
@@ -38,11 +32,15 @@ type FakePlatform struct {
 
 	AddUserToGroupsGroups             map[string][]string
 	DeleteEphemeralUsersMatchingRegex string
-	SetupSshPublicKeys                map[string]string
-	SetupSshPublicKey                 string
-	SetupSshUsername                  string
-	UserPasswords                     map[string]string
-	SetupHostnameHostname             string
+	SetupSSHPublicKeys                map[string]string
+
+	SetupSSHCalled    bool
+	SetupSSHPublicKey string
+	SetupSSHUsername  string
+	SetupSSHErr       error
+
+	UserPasswords         map[string]string
+	SetupHostnameHostname string
 
 	SetTimeWithNtpServersServers []string
 
@@ -56,7 +54,9 @@ type FakePlatform struct {
 	SetupTmpDirErr    error
 
 	SetupManualNetworkingNetworks boshsettings.Networks
-	SetupDhcpNetworks             boshsettings.Networks
+
+	SetupDhcpNetworks boshsettings.Networks
+	SetupDhcpErr      error
 
 	MountPersistentDiskCalled     bool
 	MountPersistentDiskDevicePath string
@@ -69,6 +69,7 @@ type FakePlatform struct {
 	GetFileContentsFromCDROMPath     string
 	GetFileContentsFromCDROMContents []byte
 
+	NormalizeDiskPathCalled   bool
 	NormalizeDiskPathPath     string
 	NormalizeDiskPathFound    bool
 	NormalizeDiskPathRealPath string
@@ -88,20 +89,25 @@ type FakePlatform struct {
 	SetupMonitUserSetup         bool
 	GetMonitCredentialsUsername string
 	GetMonitCredentialsPassword string
+
+	PrepareForNetworkingChangeCalled bool
+	PrepareForNetworkingChangeErr    error
+
+	GetDefaultNetworkCalled  bool
+	GetDefaultNetworkNetwork boshsettings.Network
+	GetDefaultNetworkErr     error
 }
 
 func NewFakePlatform() (platform *FakePlatform) {
 	platform = new(FakePlatform)
 	platform.Fs = fakesys.NewFakeFileSystem()
 	platform.Runner = fakesys.NewFakeCmdRunner()
-	platform.FakeStatsCollector = &fakestats.FakeStatsCollector{}
 	platform.FakeCompressor = fakecmd.NewFakeCompressor()
 	platform.FakeCopier = fakecmd.NewFakeCopier()
 	platform.FakeVitalsService = fakevitals.NewFakeService()
-	platform.FakeDiskManager = fakedisk.NewFakeDiskManager()
 	platform.DevicePathResolver = fakedpresolv.NewFakeDevicePathResolver()
 	platform.AddUserToGroupsGroups = make(map[string][]string)
-	platform.SetupSshPublicKeys = make(map[string]string)
+	platform.SetupSSHPublicKeys = make(map[string]string)
 	platform.UserPasswords = make(map[string]string)
 	platform.ScsiDiskMap = make(map[string]string)
 	return
@@ -113,10 +119,6 @@ func (p *FakePlatform) GetFs() (fs boshsys.FileSystem) {
 
 func (p *FakePlatform) GetRunner() (runner boshsys.CmdRunner) {
 	return p.Runner
-}
-
-func (p *FakePlatform) GetStatsCollector() (collector boshstats.StatsCollector) {
-	return p.FakeStatsCollector
 }
 
 func (p *FakePlatform) GetCompressor() (compressor boshcmd.Compressor) {
@@ -166,11 +168,12 @@ func (p *FakePlatform) DeleteEphemeralUsersMatching(regex string) (err error) {
 	return
 }
 
-func (p *FakePlatform) SetupSsh(publicKey, username string) (err error) {
-	p.SetupSshPublicKeys[username] = publicKey
-	p.SetupSshPublicKey = publicKey
-	p.SetupSshUsername = username
-	return
+func (p *FakePlatform) SetupSSH(publicKey, username string) error {
+	p.SetupSSHCalled = true
+	p.SetupSSHPublicKeys[username] = publicKey
+	p.SetupSSHPublicKey = publicKey
+	p.SetupSSHUsername = username
+	return p.SetupSSHErr
 }
 
 func (p *FakePlatform) SetUserPassword(user, encryptedPwd string) (err error) {
@@ -185,7 +188,7 @@ func (p *FakePlatform) SetupHostname(hostname string) (err error) {
 
 func (p *FakePlatform) SetupDhcp(networks boshsettings.Networks) (err error) {
 	p.SetupDhcpNetworks = networks
-	return
+	return p.SetupDhcpErr
 }
 
 func (p *FakePlatform) SetupManualNetworking(networks boshsettings.Networks) (err error) {
@@ -231,6 +234,7 @@ func (p *FakePlatform) UnmountPersistentDisk(devicePath string) (didUnmount bool
 }
 
 func (p *FakePlatform) NormalizeDiskPath(devicePath string) (realPath string, found bool) {
+	p.NormalizeDiskPathCalled = true
 	p.NormalizeDiskPathPath = devicePath
 	realPath = p.NormalizeDiskPathRealPath
 	found = p.NormalizeDiskPathFound
@@ -279,6 +283,12 @@ func (p *FakePlatform) GetMonitCredentials() (username, password string, err err
 	return
 }
 
-func (p *FakePlatform) GetDiskManager() (diskManager boshdisk.Manager) {
-	return p.FakeDiskManager
+func (p *FakePlatform) PrepareForNetworkingChange() error {
+	p.PrepareForNetworkingChangeCalled = true
+	return p.PrepareForNetworkingChangeErr
+}
+
+func (p *FakePlatform) GetDefaultNetwork() (boshsettings.Network, error) {
+	p.GetDefaultNetworkCalled = true
+	return p.GetDefaultNetworkNetwork, p.GetDefaultNetworkErr
 }
