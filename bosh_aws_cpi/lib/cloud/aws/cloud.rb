@@ -387,7 +387,7 @@ module Bosh::AwsCloud
         return creator.fake.id if creator.fake?
 
         begin
-          # These three variables are used in 'ensure' clause
+          # These variables are used in 'ensure' clause
           instance = nil
           volume = nil
 
@@ -446,12 +446,6 @@ module Bosh::AwsCloud
       TagManager.tag(instance, "Name", name) if name
     rescue AWS::EC2::Errors::TagLimitExceeded => e
       logger.error("could not tag #{instance.id}: #{e.message}")
-    end
-
-    # @note Not implemented in the AWS CPI
-    def validate_deployment(old_manifest, new_manifest)
-      # Not implemented in VSphere CPI as well
-      not_implemented(:validate_deployment)
     end
 
     def find_ebs_device(sd_name)

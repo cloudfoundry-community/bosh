@@ -10,103 +10,109 @@ import (
 	boshdirs "bosh/settings/directories"
 )
 
-type SshAction struct {
-	settings    boshsettings.Service
-	platform    boshplatform.Platform
-	dirProvider boshdirs.DirectoriesProvider
+type SSHAction struct {
+	settingsService boshsettings.Service
+	platform        boshplatform.Platform
+	dirProvider     boshdirs.DirectoriesProvider
 }
 
-func NewSsh(
-	settings boshsettings.Service,
+func NewSSH(
+	settingsService boshsettings.Service,
 	platform boshplatform.Platform,
 	dirProvider boshdirs.DirectoriesProvider,
-) (action SshAction) {
-	action.settings = settings
+) (action SSHAction) {
+	action.settingsService = settingsService
 	action.platform = platform
 	action.dirProvider = dirProvider
 	return
 }
 
-func (a SshAction) IsAsynchronous() bool {
+func (a SSHAction) IsAsynchronous() bool {
 	return false
 }
 
-func (a SshAction) IsPersistent() bool {
+func (a SSHAction) IsPersistent() bool {
 	return false
 }
 
-type SshParams struct {
+type SSHParams struct {
 	UserRegex string `json:"user_regex"`
 	User      string
 	Password  string
 	PublicKey string `json:"public_key"`
 }
 
-func (a SshAction) Run(cmd string, params SshParams) (value interface{}, err error) {
-	switch cmd {
-	case "setup":
-		return a.setupSsh(params)
-	case "cleanup":
-		return a.cleanupSsh(params)
-	}
-
-	err = errors.New("Unknown command for SSH method")
-	return
+type SSHResult struct {
+	Command string `json:"command"`
+	Status  string `json:"status"`
+	IP      string `json:"ip,omitempty"`
 }
 
-func (a SshAction) setupSsh(params SshParams) (value interface{}, err error) {
-	boshSshPath := filepath.Join(a.dirProvider.BaseDir(), "bosh_ssh")
-	err = a.platform.CreateUser(params.User, params.Password, boshSshPath)
+func (a SSHAction) Run(cmd string, params SSHParams) (SSHResult, error) {
+	switch cmd {
+	case "setup":
+		return a.setupSSH(params)
+	case "cleanup":
+		return a.cleanupSSH(params)
+	}
+
+	return SSHResult{}, errors.New("Unknown command for SSH method")
+}
+
+func (a SSHAction) setupSSH(params SSHParams) (SSHResult, error) {
+	var result SSHResult
+
+	boshSSHPath := filepath.Join(a.dirProvider.BaseDir(), "bosh_ssh")
+
+	err := a.platform.CreateUser(params.User, params.Password, boshSSHPath)
 	if err != nil {
-		err = bosherr.WrapError(err, "Creating user")
-		return
+		return result, bosherr.WrapError(err, "Creating user")
 	}
 
 	err = a.platform.AddUserToGroups(params.User, []string{boshsettings.VCAPUsername, boshsettings.AdminGroup})
 	if err != nil {
-		err = bosherr.WrapError(err, "Adding user to groups")
-		return
+		return result, bosherr.WrapError(err, "Adding user to groups")
 	}
 
-	err = a.platform.SetupSsh(params.PublicKey, params.User)
+	err = a.platform.SetupSSH(params.PublicKey, params.User)
 	if err != nil {
-		err = bosherr.WrapError(err, "Setting ssh public key")
-		return
+		return result, bosherr.WrapError(err, "Setting ssh public key")
 	}
 
-	defaultIP, found := a.settings.GetDefaultIP()
+	settings := a.settingsService.GetSettings()
 
+	defaultIP, found := settings.Networks.DefaultIP()
 	if !found {
-		err = errors.New("No default ip could be found")
-		return
+		return result, errors.New("No default ip could be found")
 	}
 
-	value = map[string]string{
-		"command": "setup",
-		"status":  "success",
-		"ip":      defaultIP,
+	result = SSHResult{
+		Command: "setup",
+		Status:  "success",
+		IP:      defaultIP,
 	}
-	return
+
+	return result, nil
 }
 
-func (a SshAction) cleanupSsh(params SshParams) (value interface{}, err error) {
-	err = a.platform.DeleteEphemeralUsersMatching(params.UserRegex)
+func (a SSHAction) cleanupSSH(params SSHParams) (SSHResult, error) {
+	err := a.platform.DeleteEphemeralUsersMatching(params.UserRegex)
 	if err != nil {
-		err = bosherr.WrapError(err, "Ssh Cleanup: Deleting Ephemeral Users")
-		return
+		return SSHResult{}, bosherr.WrapError(err, "SSH Cleanup: Deleting Ephemeral Users")
 	}
 
-	value = map[string]string{
-		"command": "cleanup",
-		"status":  "success",
+	result := SSHResult{
+		Command: "cleanup",
+		Status:  "success",
 	}
-	return
+
+	return result, nil
 }
 
-func (a SshAction) Resume() (interface{}, error) {
+func (a SSHAction) Resume() (interface{}, error) {
 	return nil, errors.New("not supported")
 }
 
-func (a SshAction) Cancel() error {
+func (a SSHAction) Cancel() error {
 	return errors.New("not supported")
 }

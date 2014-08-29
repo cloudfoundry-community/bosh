@@ -14,20 +14,45 @@ type Provider struct {
 }
 
 func NewProvider(logger boshlog.Logger, platform boshplatform.Platform) (p Provider) {
-	digDNSResolver := NewDigDNSResolver(logger)
+	metadataService := NewConcreteMetadataService(
+		"http://169.254.169.254",
+		NewDigDNSResolver(logger),
+	)
+
+	// Currently useServerNameAsID boolean setting is hard coded below
+	// because we do not support arbitrary infrastructure configurations
+	awsRegistry := NewConcreteRegistry(metadataService, false)
+	openstackRegistry := NewConcreteRegistry(metadataService, true)
 
 	fs := platform.GetFs()
 	dirProvider := platform.GetDirProvider()
 
-	awsDevicePathResolver := boshdpresolv.NewAwsDevicePathResolver(500*time.Millisecond, platform.GetFs())
-	vsphereDevicePathResolver := boshdpresolv.NewVsphereDevicePathResolver(500*time.Millisecond, platform.GetFs())
-	dummyDevicePathResolver := boshdpresolv.NewDummyDevicePathResolver(1*time.Millisecond, fs)
+	mappedDevicePathResolver := boshdpresolv.NewMappedDevicePathResolver(500*time.Millisecond, fs)
+	vsphereDevicePathResolver := boshdpresolv.NewVsphereDevicePathResolver(500*time.Millisecond, fs)
+	dummyDevicePathResolver := boshdpresolv.NewDummyDevicePathResolver()
+
+	awsInfrastructure := NewAwsInfrastructure(
+		metadataService,
+		awsRegistry,
+		platform,
+		mappedDevicePathResolver,
+		logger,
+	)
+
+	openstackInfrastructure := NewOpenstackInfrastructure(
+		metadataService,
+		openstackRegistry,
+		platform,
+		mappedDevicePathResolver,
+		logger,
+	)
 
 	p.infrastructures = map[string]Infrastructure{
-		"aws":     NewAwsInfrastructure("http://169.254.169.254", digDNSResolver, platform, awsDevicePathResolver),
-		"dummy":   NewDummyInfrastructure(fs, dirProvider, platform, dummyDevicePathResolver),
-		"warden":  NewWardenInfrastructure(dirProvider, platform, dummyDevicePathResolver),
-		"vsphere": NewVsphereInfrastructure(platform, vsphereDevicePathResolver, logger),
+		"aws":       awsInfrastructure,
+		"openstack": openstackInfrastructure,
+		"dummy":     NewDummyInfrastructure(fs, dirProvider, platform, dummyDevicePathResolver),
+		"warden":    NewWardenInfrastructure(dirProvider, platform, dummyDevicePathResolver),
+		"vsphere":   NewVsphereInfrastructure(platform, vsphereDevicePathResolver, logger),
 	}
 	return
 }

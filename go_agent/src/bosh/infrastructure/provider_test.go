@@ -27,13 +27,24 @@ var _ = Describe("Provider", func() {
 
 	Describe("Get", func() {
 		It("returns aws infrastructure", func() {
-			expectedDevicePathResolver := boshdpresolv.NewAwsDevicePathResolver(500*time.Millisecond, platform.GetFs())
-
-			expectedInf := NewAwsInfrastructure(
+			metadataService := NewConcreteMetadataService(
 				"http://169.254.169.254",
 				NewDigDNSResolver(logger),
+			)
+
+			registry := NewConcreteRegistry(metadataService, false)
+
+			expectedDevicePathResolver := boshdpresolv.NewMappedDevicePathResolver(
+				500*time.Millisecond,
+				platform.GetFs(),
+			)
+
+			expectedInf := NewAwsInfrastructure(
+				metadataService,
+				registry,
 				platform,
 				expectedDevicePathResolver,
+				logger,
 			)
 
 			inf, err := provider.Get("aws")
@@ -41,8 +52,37 @@ var _ = Describe("Provider", func() {
 			Expect(inf).To(Equal(expectedInf))
 		})
 
+		It("returns openstack infrastructure", func() {
+			metadataService := NewConcreteMetadataService(
+				"http://169.254.169.254",
+				NewDigDNSResolver(logger),
+			)
+
+			registry := NewConcreteRegistry(metadataService, true)
+
+			expectedDevicePathResolver := boshdpresolv.NewMappedDevicePathResolver(
+				500*time.Millisecond,
+				platform.GetFs(),
+			)
+
+			expectedInf := NewOpenstackInfrastructure(
+				metadataService,
+				registry,
+				platform,
+				expectedDevicePathResolver,
+				logger,
+			)
+
+			inf, err := provider.Get("openstack")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(inf).To(Equal(expectedInf))
+		})
+
 		It("returns vsphere infrastructure", func() {
-			expectedDevicePathResolver := boshdpresolv.NewVsphereDevicePathResolver(500*time.Millisecond, platform.GetFs())
+			expectedDevicePathResolver := boshdpresolv.NewVsphereDevicePathResolver(
+				500*time.Millisecond,
+				platform.GetFs(),
+			)
 
 			expectedInf := NewVsphereInfrastructure(platform, expectedDevicePathResolver, logger)
 
@@ -52,7 +92,7 @@ var _ = Describe("Provider", func() {
 		})
 
 		It("returns dummy infrastructure", func() {
-			expectedDevicePathResolver := boshdpresolv.NewDummyDevicePathResolver(1*time.Millisecond, platform.GetFs())
+			expectedDevicePathResolver := boshdpresolv.NewDummyDevicePathResolver()
 
 			expectedInf := NewDummyInfrastructure(
 				platform.GetFs(),
@@ -67,7 +107,7 @@ var _ = Describe("Provider", func() {
 		})
 
 		It("returns warden infrastructure", func() {
-			expectedDevicePathResolver := boshdpresolv.NewDummyDevicePathResolver(1*time.Millisecond, platform.GetFs())
+			expectedDevicePathResolver := boshdpresolv.NewDummyDevicePathResolver()
 
 			expectedInf := NewWardenInfrastructure(
 				platform.GetDirProvider(),

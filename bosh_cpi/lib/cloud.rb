@@ -7,6 +7,7 @@ require "forwardable"
 require "cloud/config"
 require "cloud/errors"
 require "cloud/provider"
+require "cloud/external_cpi"
 
 module Bosh
 
@@ -207,12 +208,6 @@ module Bosh
     # other disk-related methods on the CPI
     def get_disks(vm_id)
       not_implemented(:get_disks)
-    end
-
-    # Validates the deployment
-    # @api not_yet_used
-    def validate_deployment(old_manifest, new_manifest)
-      not_implemented(:validate_deployment)
     end
 
     private

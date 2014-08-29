@@ -3,8 +3,6 @@ package platform
 import (
 	boshdpresolv "bosh/infrastructure/devicepathresolver"
 	boshcmd "bosh/platform/commands"
-	boshdisk "bosh/platform/disk"
-	boshstats "bosh/platform/stats"
 	boshvitals "bosh/platform/vitals"
 	boshsettings "bosh/settings"
 	boshdir "bosh/settings/directories"
@@ -12,18 +10,15 @@ import (
 )
 
 type Platform interface {
-	GetFs() (fs boshsys.FileSystem)
-	GetRunner() (runner boshsys.CmdRunner)
-	GetStatsCollector() (statsCollector boshstats.StatsCollector)
-	GetCompressor() (compressor boshcmd.Compressor)
-	GetCopier() (copier boshcmd.Copier)
-	GetDirProvider() (dirProvider boshdir.DirectoriesProvider)
-	GetVitalsService() (service boshvitals.Service)
-	GetMonitCredentials() (username, password string, err error)
-	GetDiskManager() (diskManager boshdisk.Manager)
+	GetFs() boshsys.FileSystem
+	GetRunner() boshsys.CmdRunner
+	GetCompressor() boshcmd.Compressor
+	GetCopier() boshcmd.Copier
+	GetDirProvider() boshdir.DirectoriesProvider
+	GetVitalsService() boshvitals.Service
 
 	GetDevicePathResolver() (devicePathResolver boshdpresolv.DevicePathResolver)
-	SetDevicePathResolver(devicePathResolver boshdpresolv.DevicePathResolver) (err error)
+	SetDevicePathResolver(devicePathResolver boshdpresolv.DevicePathResolver) error
 
 	// User management
 	CreateUser(username, password, basePath string) (err error)
@@ -31,7 +26,7 @@ type Platform interface {
 	DeleteEphemeralUsersMatching(regex string) (err error)
 
 	// Bootstrap functionality
-	SetupSsh(publicKey, username string) (err error)
+	SetupSSH(publicKey, username string) (err error)
 	SetUserPassword(user, encryptedPwd string) (err error)
 	SetupHostname(hostname string) (err error)
 	SetupDhcp(networks boshsettings.Networks) (err error)
@@ -42,6 +37,7 @@ type Platform interface {
 	SetupDataDir() (err error)
 	SetupTmpDir() (err error)
 	SetupMonitUser() (err error)
+	StartMonit() (err error)
 	SetupRuntimeConfiguration() (err error)
 
 	// Disk management
@@ -54,5 +50,10 @@ type Platform interface {
 
 	GetFileContentsFromCDROM(filePath string) (contents []byte, err error)
 
-	StartMonit() (err error)
+	// Network misc
+	PrepareForNetworkingChange() error
+	GetDefaultNetwork() (boshsettings.Network, error)
+
+	// Additional monit management
+	GetMonitCredentials() (username, password string, err error)
 }

@@ -1,55 +1,133 @@
 require 'spec_helper'
+require 'fakefs/spec_helpers'
 require 'cloud/vsphere/client'
 
 module VSphereCloud
   describe Client do
-    subject(:client) { Client.new('http://www.example.com') }
+    include FakeFS::SpecHelpers
 
+    subject(:client) { Client.new('http://www.example.com', options) }
+
+    let(:options) { {} }
     let(:fake_search_index) { double }
     let(:fake_service_content) { double('service content', root_folder: double('fake-root-folder')) }
 
+    let(:logger) { instance_double('Logger') }
+    before { class_double('Bosh::Clouds::Config', logger: logger).as_stubbed_const }
+
     before do
       fake_instance = double('service instance', content: fake_service_content)
-      VimSdk::Vim::ServiceInstance.stub(new: fake_instance)
-      fake_service_content.stub(search_index: fake_search_index)
+      allow(VimSdk::Vim::ServiceInstance).to receive(:new).and_return(fake_instance)
+      allow(fake_service_content).to receive(:search_index).and_return(fake_search_index)
+    end
+
+    describe '#initialize' do
+      let(:ssl_config) { double(:ssl_config, :verify_mode= => nil) }
+      let(:http_client) do
+        instance_double('HTTPClient',
+          :debug_dev= => nil,
+          :send_timeout= => nil,
+          :receive_timeout= => nil,
+          :connect_timeout= => nil,
+          :ssl_config => ssl_config,
+        )
+      end
+      before { allow(HTTPClient).to receive(:new).and_return(http_client) }
+
+      let(:options) { { 'soap_log' => soap_log } }
+
+      def self.it_configures_http_client
+        it 'configures http client ' do
+          expect(http_client).to receive(:send_timeout=).with(14400)
+          expect(http_client).to receive(:receive_timeout=).with(14400)
+          expect(http_client).to receive(:connect_timeout=).with(30)
+          expect(ssl_config).to receive(:verify_mode=).with(OpenSSL::SSL::VERIFY_NONE)
+
+          subject
+        end
+      end
+
+      context 'when soap log is an IO' do
+        let(:soap_log) { IO.new(0) }
+
+        it 'uses given IO for http_client logging' do
+          expect(http_client).to receive(:debug_dev=).with(soap_log)
+          expect(VimSdk::Soap::StubAdapter).to receive(:new).with('http://www.example.com', 'vim.version.version6', http_client)
+
+          subject
+        end
+
+        it_configures_http_client
+      end
+
+      context 'when soap log is a StringIO' do
+        let(:soap_log) { StringIO.new }
+
+        it 'uses given IO for http_client logging' do
+          expect(http_client).to receive(:debug_dev=).with(soap_log)
+          expect(VimSdk::Soap::StubAdapter).to receive(:new).with('http://www.example.com', 'vim.version.version6', http_client)
+
+          subject
+        end
+
+        it_configures_http_client
+      end
+
+      context 'when soap log is a file path' do
+        let(:soap_log) { '/fake-log-file' }
+        before { FileUtils.touch('/fake-log-file') }
+
+        it 'creates a file IO for http_client logging' do
+          expect(http_client).to receive(:debug_dev=) do |log_file|
+            expect(log_file).to be_instance_of(File)
+            expect(log_file.path).to eq('/fake-log-file')
+          end
+
+          expect(VimSdk::Soap::StubAdapter).to receive(:new).with('http://www.example.com', 'vim.version.version6', http_client)
+
+          subject
+        end
+
+        it_configures_http_client
+      end
     end
 
     describe '#find_by_inventory_path' do
       context 'given a string' do
         it 'passes the path to a SearchIndex object when path contains no slashes' do
-          fake_search_index.should_receive(:find_by_inventory_path).with('foobar')
+          expect(fake_search_index).to receive(:find_by_inventory_path).with('foobar')
           client.find_by_inventory_path("foobar")
         end
 
         it 'does not escape slashes into %2f' +
            'because we want to allow users to specify nested objects' do
-          fake_search_index.should_receive(:find_by_inventory_path).with('foo/bar')
+          expect(fake_search_index).to receive(:find_by_inventory_path).with('foo/bar')
           client.find_by_inventory_path("foo/bar")
         end
       end
 
       context 'given a flat array of strings' do
         it 'joins them with slashes' do
-          fake_search_index.should_receive(:find_by_inventory_path).with('foo/bar')
+          expect(fake_search_index).to receive(:find_by_inventory_path).with('foo/bar')
           client.find_by_inventory_path(['foo', 'bar'])
         end
 
         it 'does not escape slashes into %2f' +
            'because we want to allow users to specify nested objects' do
-          fake_search_index.should_receive(:find_by_inventory_path).with('foo/bar/baz')
+          expect(fake_search_index).to receive(:find_by_inventory_path).with('foo/bar/baz')
           client.find_by_inventory_path(['foo', 'bar/baz'])
         end
       end
 
       context 'given a nested array of strings' do
         it 'joins them with slashes recursively' do
-          fake_search_index.should_receive(:find_by_inventory_path).with('foo/bar/baz')
+          expect(fake_search_index).to receive(:find_by_inventory_path).with('foo/bar/baz')
           client.find_by_inventory_path(['foo', ['bar', 'baz']])
         end
 
         it 'does not escape slashes into %2f' +
            'because we want to allow users to specify nested objects' do
-          fake_search_index.should_receive(:find_by_inventory_path).with('foo/bar/baz/jaz')
+          expect(fake_search_index).to receive(:find_by_inventory_path).with('foo/bar/baz/jaz')
           client.find_by_inventory_path(['foo', ['bar', 'baz/jaz']])
         end
       end
@@ -89,6 +167,58 @@ module VSphereCloud
         expect(fake_service_content.root_folder).to receive(:move_into).with(things_to_move).and_return(task)
         expect(client).to receive(:wait_for_task).with(task)
         client.move_into_root_folder(things_to_move)
+      end
+    end
+
+    describe '#delete_path' do
+      let(:datacenter) { instance_double('VimSdk::Vim::Datacenter') }
+      let(:task) { instance_double('VimSdk::Vim::Task') }
+      let(:file_manager) { instance_double('VimSdk::Vim::FileManager') }
+
+      before do
+        allow(fake_service_content).to receive(:file_manager).and_return(file_manager)
+      end
+
+      context 'when the path exits' do
+        it 'calls delete_file on file manager' do
+          expect(client).to receive(:wait_for_task).with(task)
+
+          expect(file_manager).to receive(:delete_file).
+            with('[some-datastore] some/path', datacenter).
+            and_return(task)
+
+          client.delete_path(datacenter, '[some-datastore] some/path')
+        end
+      end
+
+      context 'when file manager raises "File not found" error' do
+        it 'does not raise error' do
+          expect(client).to receive(:wait_for_task).with(task).
+            and_raise(RuntimeError.new('File [some-datastore] some/path was not found'))
+
+          expect(file_manager).to receive(:delete_file).
+            with('[some-datastore] some/path', datacenter).
+            and_return(task)
+
+          expect {
+            client.delete_path(datacenter, '[some-datastore] some/path')
+          }.to_not raise_error
+        end
+      end
+
+      context 'when file manager raises other error' do
+        it 'raises that error' do
+          error = RuntimeError.new('Invalid datastore path some/path')
+          expect(client).to receive(:wait_for_task).with(task).
+            and_raise(error)
+          expect(file_manager).to receive(:delete_file).
+            with('some/path', datacenter).
+            and_return(task)
+
+          expect {
+            client.delete_path(datacenter, 'some/path')
+          }.to raise_error
+        end
       end
     end
 

@@ -31,29 +31,32 @@ func (b concreteBuilder) Build(input MonitAlert) (alert Alert, err error) {
 	return
 }
 
-func (b concreteBuilder) getSeverity(input MonitAlert) (severity SeverityLevel) {
+func (b concreteBuilder) getSeverity(input MonitAlert) SeverityLevel {
 	severity, severityFound := eventToSeverity[strings.ToLower(input.Event)]
 	if !severityFound {
 		b.logger.Error("Agent", "Unknown monit event name `%s', using default severity %d", input.Event, SeverityDefault)
-		severity = SeverityDefault
+		return SeverityDefault
 	}
-	return
+
+	return severity
 }
 
-func (b concreteBuilder) getTitle(input MonitAlert) (title string) {
-	service := input.Service
-	ips := b.settingsService.GetIPs()
+func (b concreteBuilder) getTitle(input MonitAlert) string {
+	settings := b.settingsService.GetSettings()
+
+	ips := settings.Networks.IPs()
 	sort.Strings(ips)
+
+	service := input.Service
 
 	if len(ips) > 0 {
 		service = fmt.Sprintf("%s (%s)", service, strings.Join(ips, ", "))
 	}
 
-	title = fmt.Sprintf("%s - %s - %s", service, input.Event, input.Action)
-	return
+	return fmt.Sprintf("%s - %s - %s", service, input.Event, input.Action)
 }
 
-func (b concreteBuilder) getCreatedAt(input MonitAlert) (timestamp int64) {
+func (b concreteBuilder) getCreatedAt(input MonitAlert) int64 {
 	createdAt, timeParseErr := time.Parse(time.RFC1123Z, input.Date)
 	if timeParseErr != nil {
 		createdAt = time.Now()
@@ -61,17 +64,6 @@ func (b concreteBuilder) getCreatedAt(input MonitAlert) (timestamp int64) {
 
 	return createdAt.Unix()
 }
-
-type SeverityLevel int
-
-const (
-	SeverityAlert    SeverityLevel = 1
-	SeverityCritical SeverityLevel = 2
-	SeverityError    SeverityLevel = 3
-	SeverityWarning  SeverityLevel = 4
-	SeverityIgnored  SeverityLevel = -1
-	SeverityDefault  SeverityLevel = SeverityCritical
-)
 
 var eventToSeverity = map[string]SeverityLevel{
 	"action done":                  SeverityIgnored,

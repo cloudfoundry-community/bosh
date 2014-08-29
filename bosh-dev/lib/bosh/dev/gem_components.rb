@@ -11,9 +11,11 @@ module Bosh::Dev
     end
 
     def build_release_gems
+      FileUtils.mkdir_p build_dir
+
       stage_with_dependencies
 
-      each do |component|
+      components.each do |component|
         finalize_release_directory(component)
       end
 
@@ -47,16 +49,18 @@ module Bosh::Dev
     end
 
     def components
-      return @components if @components
-
-      @components = map { |component| GemComponent.new(component, @gem_version.version) }
-    end
-
-    def has_db?(component)
-      %w(bosh-director bosh-registry).include?(component)
+      @components ||= map { |component| GemComponent.new(component, @gem_version.version) }
     end
 
     private
+
+    def has_db?(component_name)
+      %w(bosh-director bosh-registry).include?(component_name)
+    end
+
+    def uses_bundler?(component_name)
+      %w(bosh-director bosh-monitor).include?(component_name)
+    end
 
     def root
       GemComponent::ROOT
@@ -64,34 +68,40 @@ module Bosh::Dev
 
     def stage_with_dependencies
       FileUtils.rm_rf 'pkg'
+      FileUtils.mkdir_p stage_dir
 
       components.each { |component| component.update_version }
-      components.each { |component| component.build_release_gem }
+      components.each { |component| component.build_gem(stage_dir) }
 
-      FileUtils.mkdir_p "/tmp/all_the_gems/#{Process.pid}"
-      Rake::FileUtilsExt.sh "cp #{root}/pkg/gems/*.gem /tmp/all_the_gems/#{Process.pid}"
-      Rake::FileUtilsExt.sh "cp #{root}/vendor/cache/*.gem /tmp/all_the_gems/#{Process.pid}"
+      Rake::FileUtilsExt.sh "cp #{root}/pkg/gems/*.gem #{build_dir}"
+      Rake::FileUtilsExt.sh "cp #{root}/vendor/cache/*.gem #{build_dir}"
+    end
+
+    def stage_dir
+      "#{root}/pkg/gems/"
     end
 
     def finalize_release_directory(component)
-      dirname = "#{root}/release/src/bosh/#{component}"
+      dirname = "#{root}/release/src/bosh/#{component.name}"
+      if uses_bundler?(component.name)
+        dirname = File.join(dirname, 'vendor/cache')
+      end
 
       FileUtils.rm_rf dirname
       FileUtils.mkdir_p dirname
-      gemfile_lock_path = File.join(root, 'Gemfile.lock')
-      lockfile = Bundler::LockfileParser.new(File.read(gemfile_lock_path))
-      Dir.chdir dirname do
-        Bundler::Resolver.resolve(
-          Bundler.definition.send(:expand_dependencies, Bundler.definition.dependencies.select { |d| d.name == component }),
-          Bundler.definition.index,
-          {},
-          lockfile.specs
-        ).each do |spec|
-          Rake::FileUtilsExt.sh "cp /tmp/all_the_gems/#{Process.pid}/#{spec.name}-*.gem ."
-          Rake::FileUtilsExt.sh "cp /tmp/all_the_gems/#{Process.pid}/pg*.gem ." if has_db?(component)
-          Rake::FileUtilsExt.sh "cp /tmp/all_the_gems/#{Process.pid}/mysql*.gem ." if has_db?(component)
-        end
+
+      component.dependencies.each do |dependency|
+        Rake::FileUtilsExt.sh "cp #{build_dir}/#{dependency.name}-*.gem #{dirname}"
       end
+
+      if has_db?(component.name)
+        Rake::FileUtilsExt.sh "cp #{build_dir}/pg*.gem #{dirname}"
+        Rake::FileUtilsExt.sh "cp #{build_dir}/mysql*.gem #{dirname}"
+      end
+    end
+
+    def build_dir
+      @build_dir ||= "/tmp/all_the_gems/#{Process.pid}"
     end
   end
 end

@@ -1,5 +1,3 @@
-# Copyright (c) 2009-2012 VMware, Inc.
-
 require 'spec_helper'
 require 'net/https'
 require 'yajl'
@@ -58,11 +56,12 @@ describe "http messages" do
     @agent_sandbox = Bosh::Agent::Spec::AgentSandbox.new('rspec_agent', @http_uri, smtp_port)
     @agent_sandbox.run
 
+    sleep 45
     counter = 0
     while !http_up?
       counter += 1
       # wait max 10 seconds for the agent to start
-      if counter > 100
+      if counter > 300
         puts File.read(@agent_sandbox.agent_logfile)
         raise "unable to connect to agent"
       end

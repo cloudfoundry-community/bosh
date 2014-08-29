@@ -6,43 +6,32 @@ require 'cloud/aws'
 MOCK_AWS_ACCESS_KEY_ID = 'foo'
 MOCK_AWS_SECRET_ACCESS_KEY = 'bar'
 
-def internal_to(*args, &block)
-  example = describe *args, &block
-  klass = args[0]
-  if klass.is_a? Class
-    saved_private_instance_methods = klass.private_instance_methods
-    example.before do
-      klass.class_eval { public *saved_private_instance_methods }
-    end
-    example.after do
-      klass.class_eval { private *saved_private_instance_methods }
-    end
-  end
-end
-
 def mock_cloud_options
   {
-    'aws' => {
-      'access_key_id' => MOCK_AWS_ACCESS_KEY_ID,
-      'secret_access_key' => MOCK_AWS_SECRET_ACCESS_KEY,
-      'region' => 'us-east-1',
-      'default_key_name' => 'sesame',
-      'default_security_groups' => []
-    },
-    'registry' => {
-      'endpoint' => 'localhost:42288',
-      'user' => 'admin',
-      'password' => 'admin'
-    },
-    'agent' => {
-      'foo' => 'bar',
-      'baz' => 'zaz'
+    'plugin' => 'aws',
+    'properties' => {
+      'aws' => {
+        'access_key_id' => MOCK_AWS_ACCESS_KEY_ID,
+        'secret_access_key' => MOCK_AWS_SECRET_ACCESS_KEY,
+        'region' => 'us-east-1',
+        'default_key_name' => 'sesame',
+        'default_security_groups' => []
+      },
+      'registry' => {
+        'endpoint' => 'localhost:42288',
+        'user' => 'admin',
+        'password' => 'admin'
+      },
+      'agent' => {
+        'foo' => 'bar',
+        'baz' => 'zaz'
+      }
     }
   }
 end
 
 def make_cloud(options = nil)
-  Bosh::AwsCloud::Cloud.new(options || mock_cloud_options)
+  Bosh::AwsCloud::Cloud.new(options || mock_cloud_options['properties'])
 end
 
 def mock_registry(endpoint = 'http://registry:3333')
@@ -57,7 +46,7 @@ def mock_cloud(options = nil)
 
   yield ec2, region if block_given?
 
-  Bosh::AwsCloud::Cloud.new(options || mock_cloud_options)
+  Bosh::AwsCloud::Cloud.new(options || mock_cloud_options['properties'])
 end
 
 def mock_ec2
@@ -111,7 +100,7 @@ end
 
 RSpec.configure do |config|
   config.before(:each) do
-    logger = double('evil global stub in spec_helper').as_null_object
+    logger = Logger.new("/dev/null")
     Bosh::Clouds::Config.stub(:logger).and_return(logger)
   end
 end

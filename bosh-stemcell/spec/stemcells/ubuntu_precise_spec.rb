@@ -1,20 +1,20 @@
 require 'spec_helper'
 
-describe 'Ubuntu 12.04 stemcell' do
+describe 'Ubuntu 12.04 stemcell', stemcell_image: true do
   context 'installed by image_install_grub' do
     describe file('/boot/grub/grub.conf') do
       it { should be_file }
       it { should contain 'default=0' }
       it { should contain 'timeout=1' }
-      it { should contain 'title Ubuntu 12.04.4 LTS (3.2.0-63-virtual)' }
+      it { should contain 'title Ubuntu 12.04.5 LTS (3.2.0-67-virtual)' }
       it { should contain '  root (hd0,0)' }
-      it { should contain '  kernel /boot/vmlinuz-3.2.0-63-virtual ro root=UUID=' }
+      it { should contain '  kernel /boot/vmlinuz-3.2.0-67-virtual ro root=UUID=' }
       it { should contain ' selinux=0' }
-      it { should contain '  initrd /boot/initrd.img-3.2.0-63-virtual' }
+      it { should contain '  initrd /boot/initrd.img-3.2.0-67-virtual' }
     end
 
     describe file('/boot/grub/menu.lst') do
-      before { pending 'until aws/openstack stop clobbering the symlink with "update-grub"' }
+      before { skip 'until aws/openstack stop clobbering the symlink with "update-grub"' }
       it { should be_linked_to('./grub.conf') }
     end
   end

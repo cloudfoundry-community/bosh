@@ -1,6 +1,3 @@
-# Copyright (c) 2009-2013 VMware, Inc.
-# Copyright (c) 2012 Piston Cloud Computing, Inc.
-
 require File.expand_path('../../../spec/shared_spec_helper', __FILE__)
 
 require 'rspec'
@@ -11,44 +8,33 @@ include Archive::Tar
 
 require 'cloud/cloudstack'
 
-def internal_to(*args, &block)
-  example = describe *args, &block
-  klass = args[0]
-  if klass.is_a? Class
-    saved_private_instance_methods = klass.private_instance_methods
-    example.before do
-      klass.class_eval { public *saved_private_instance_methods }
-    end
-    example.after do
-      klass.class_eval { private *saved_private_instance_methods }
-    end
-  end
-end
-
 def mock_cloud_options
   {
-    'cloudstack' => {
-      'endpoint' => 'http://127.0.0.1:5000',
-      'api_key' => 'admin',
-      'secret_access_key' => 'foobar',
-      'default_zone' => 'foobar-1a',
-      'state_timeout' => 0.1,
-      'wait_resource_poll_interval' => 3
-    },
-    'registry' => {
-      'endpoint' => 'localhost:42288',
-      'user' => 'admin',
-      'password' => 'admin'
-    },
-    'agent' => {
-      'foo' => 'bar',
-      'baz' => 'zaz'
+    'plugin' => 'cloudstack',
+    'properties' => {
+      'cloudstack' => {
+        'endpoint' => 'http://127.0.0.1:5000',
+        'api_key' => 'admin',
+        'secret_access_key' => 'foobar',
+        'default_zone' => 'foobar-1a',
+        'state_timeout' => 0.1,
+        'wait_resource_poll_interval' => 3
+      },
+      'registry' => {
+        'endpoint' => 'localhost:42288',
+        'user' => 'admin',
+        'password' => 'admin'
+      },
+      'agent' => {
+        'foo' => 'bar',
+        'baz' => 'zaz'
+      }
     }
   }
 end
 
 def make_cloud(options = nil)
-  Bosh::CloudStackCloud::Cloud.new(options || mock_cloud_options)
+  Bosh::CloudStackCloud::Cloud.new(options || mock_cloud_options['properties'])
 end
 
 def mock_registry(endpoint = 'http://registry:3333')
@@ -66,12 +52,13 @@ def mock_cloud(options = nil)
   snapshots = double('snapshots')
   key_pairs = double('key_pairs')
   security_groups = double('security_groups')
-  zones = [double('foobar-1a', :name => mock_cloud_options['cloudstack']['default_zone'], :id => 'foobar-1a', :network_type => 'Basic', :security_groups_enabled => true),
-           double('foobar-2a', :name => "foobar-2a", :id => 'foobar-2a', :network_type => 'Advanced', :security_groups_enabled => false)]
+  zones = [double('foobar-1a', :name => mock_cloud_options['properties']['cloudstack']['default_zone'], :id => 'foobar-1a', :network_type => 'Basic', :security_groups_enabled => true),
+           double('foobar-2a', :name => 'foobar-2a', :id => 'foobar-2a', :network_type => 'Advanced', :security_groups_enabled => false)]
   disk_offerings = [double('disk_offer1', :name => 'disk_offer-10000', :id => 'disk_offer1', :disk_size => 10000)]
   networks = [double('net-1', :name => 'netname-1', :id => 'netid-1'), double('net-2', :name => 'netname-2', :id => 'netid-2')]
   jobs = double('jobs')
   nats = double('nats')
+
   compute = double(Fog::Compute)
 
   compute.stub(:servers).and_return(servers)
@@ -92,7 +79,7 @@ def mock_cloud(options = nil)
 
   yield compute if block_given?
 
-  Bosh::CloudStackCloud::Cloud.new(options || mock_cloud_options)
+  Bosh::CloudStackCloud::Cloud.new(options || mock_cloud_options['properties'])
 end
 
 def dynamic_network_spec

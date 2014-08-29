@@ -4,18 +4,17 @@ import (
 	"encoding/json"
 
 	bosherr "bosh/errors"
+	boshsettings "bosh/settings"
 	boshsys "bosh/system"
 )
 
 type concreteV1Service struct {
-	specFilePath string
 	fs           boshsys.FileSystem
+	specFilePath string
 }
 
-func NewConcreteV1Service(fs boshsys.FileSystem, specFilePath string) (service concreteV1Service) {
-	service.fs = fs
-	service.specFilePath = specFilePath
-	return
+func NewConcreteV1Service(fs boshsys.FileSystem, specFilePath string) concreteV1Service {
+	return concreteV1Service{fs: fs, specFilePath: specFilePath}
 }
 
 func (s concreteV1Service) Get() (V1ApplySpec, error) {
@@ -50,4 +49,25 @@ func (s concreteV1Service) Set(spec V1ApplySpec) error {
 	}
 
 	return nil
+}
+
+func (s concreteV1Service) PopulateDynamicNetworks(spec V1ApplySpec, settings boshsettings.Settings) (V1ApplySpec, error) {
+	for networkName, networkSpec := range spec.NetworkSpecs {
+		if !networkSpec.IsDynamic() {
+			continue
+		}
+
+		network, ok := settings.Networks[networkName]
+		if !ok {
+			return V1ApplySpec{}, bosherr.New("Network %s is not found in settings", networkName)
+		}
+
+		spec.NetworkSpecs[networkName] = networkSpec.PopulateIPInfo(
+			network.IP,
+			network.Netmask,
+			network.Gateway,
+		)
+	}
+
+	return spec, nil
 }

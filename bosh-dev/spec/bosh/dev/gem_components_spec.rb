@@ -9,7 +9,40 @@ module Bosh::Dev
     end
 
     let(:gem_component) do
-      instance_double('Bosh::Dev::GemComponent', build_release_gem: nil)
+      instance_double('Bosh::Dev::GemComponent', build_gem: nil)
+    end
+
+    let(:expected_gems) do
+      %w(
+        agent_client
+        blobstore_client
+        bosh-core
+        bosh-stemcell
+        bosh_agent
+        bosh_aws_cpi
+        bosh_cli
+        bosh_cli_plugin_aws
+        bosh_cli_plugin_micro
+        bosh_common
+        bosh_cpi
+        bosh_openstack_cpi
+        bosh_cloudstack_cpi
+        bosh-registry
+        bosh_vsphere_cpi
+        bosh_warden_cpi
+        bosh-director
+        bosh-director-core
+        bosh-monitor
+        bosh-release
+        simple_blobstore_server
+      )
+    end
+
+    let(:expected_components) do
+      expected_gems.map do |gem|
+        instance_double('Bosh::Dev::GemComponent', build_gem: nil, name: gem,
+          dependencies: [], update_version: nil)
+      end
     end
 
     subject(:gem_components) do
@@ -17,35 +50,21 @@ module Bosh::Dev
     end
 
     before do
-      GemComponent.stub(:new).and_return(gem_component)
-      GemVersion.stub(:new).with(456).and_return(gem_version)
-      GemVersion.stub(:new).with('123').and_return(gem_version)
+      expected_components.each do |component|
+        allow(GemComponent).to receive(:new).with(component.name, anything).and_return(component)
+      end
 
-      Rake::FileUtilsExt.stub(:sh)
+      allow(GemVersion).to receive(:new).with(456).and_return(gem_version)
+      allow(GemVersion).to receive(:new).with('123').and_return(gem_version)
+
+      allow(Rake::FileUtilsExt).to receive(:sh)
     end
 
     describe '#components' do
       it 'returns a list of GemComponent objects for each gem' do
-        GemComponent.should_receive(:new).with('agent_client', gem_version.version)
-        GemComponent.should_receive(:new).with('blobstore_client', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh-core', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh-stemcell', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_agent', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_aws_cpi', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_cli', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_cli_plugin_aws', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_cli_plugin_micro', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_common', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_cpi', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_openstack_cpi', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh-registry', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_vsphere_cpi', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh_warden_cpi', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh-director', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh-director-core', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh-monitor', gem_version.version)
-        GemComponent.should_receive(:new).with('bosh-release', gem_version.version)
-        GemComponent.should_receive(:new).with('simple_blobstore_server', gem_version.version)
+        expected_gems.each do |gem|
+          expect(GemComponent).to receive(:new).with(gem, gem_version.version)
+        end
 
         gem_components.components
       end
@@ -53,33 +72,69 @@ module Bosh::Dev
 
     describe '#each' do
       its(:to_a) do
-        should eq(%w[
-          agent_client
-          blobstore_client
-          bosh-core
-          bosh-stemcell
-          bosh_agent
-          bosh_aws_cpi
-          bosh_cli
-          bosh_cli_plugin_aws
-          bosh_cli_plugin_micro
-          bosh_common
-          bosh_cpi
-          bosh_openstack_cpi
-          bosh_cloudstack_cpi
-          bosh-registry
-          bosh_vsphere_cpi
-          bosh_warden_cpi
-          bosh-director
-          bosh-director-core
-          bosh-monitor
-          bosh-release
-          simple_blobstore_server
-        ])
+        should eq(expected_gems)
       end
     end
 
-    it { should have_db('bosh-director') }
-    it { should have_db('bosh-registry') }
+    describe '#build_release_gems' do
+      it 'updates components versions' do
+        expected_components.each do |component|
+          expect(component).to receive(:update_version)
+        end
+
+        gem_components.build_release_gems
+      end
+
+      it 'builds components gems' do
+        expected_components.each do |component|
+          expect(component).to receive(:build_gem).with(/pkg\/gems/)
+        end
+
+        gem_components.build_release_gems
+      end
+
+      it 'copies vendored gems' do
+        expect(Rake::FileUtilsExt).to receive(:sh).with(%r{cp .*/pkg/gems/\*\.gem /tmp/all_the_gems/\d+})
+        expect(Rake::FileUtilsExt).to receive(:sh).with(%r{cp .*/vendor/cache/\*\.gem /tmp/all_the_gems/\d+})
+
+        gem_components.build_release_gems
+      end
+
+      context 'when components have dependencies' do
+        context 'when the components use Bundler' do
+          it 'copies vendored dependencies to vendor/cache of the component root directory' do
+            expected_components.each do |c|
+              allow(c).to receive(:dependencies).and_return([double(:fake_dependency, name: "fake-dep-name-for-#{c.name}")])
+            end
+
+            expect(Rake::FileUtilsExt).to receive(:sh).with(%r{cp /tmp/all_the_gems/\d+/fake-dep-name-for-bosh-director-\*\.gem .*/release/src/bosh/bosh-director/vendor/cache}).once
+            expect(Rake::FileUtilsExt).to receive(:sh).with(%r{cp /tmp/all_the_gems/\d+/fake-dep-name-for-bosh-monitor-\*\.gem .*/release/src/bosh/bosh-monitor/vendor/cache}).once
+
+            gem_components.build_release_gems
+          end
+        end
+
+        context 'when the components do not use Bundler' do
+          it 'copies vendored dependencies to the root directory of the component' do
+            fake_dependency = double(:fake_dependency, name: 'fake-dep-name')
+            allow(expected_components[0]).to receive(:dependencies).and_return([fake_dependency])
+
+            expect(Rake::FileUtilsExt).to receive(:sh).with(%r{cp /tmp/all_the_gems/\d+/fake-dep-name-\*\.gem .*/release/src/bosh/#{expected_components[0].name}$})
+
+            gem_components.build_release_gems
+          end
+        end
+      end
+
+      context 'when components have database dependency' do
+        it 'copies pg and mysql gems' do
+          # Only bosh-director and bosh-registry will copy db gems
+          expect(Rake::FileUtilsExt).to receive(:sh).with(%r{cp /tmp/all_the_gems/\d+/pg\*\.gem .*/release/src/bosh/.*}).twice
+          expect(Rake::FileUtilsExt).to receive(:sh).with(%r{cp /tmp/all_the_gems/\d+/mysql\*\.gem .*/release/src/bosh/.*}).twice
+
+          gem_components.build_release_gems
+        end
+      end
+    end
   end
 end

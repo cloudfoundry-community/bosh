@@ -70,6 +70,7 @@ describe "messages" do
 
     @agent_sandbox = Bosh::Agent::Spec::AgentSandbox.new(@agent_id, @nats_uri, @smtp_port, 'ERROR')
     @agent_sandbox.run
+sleep 30
     wait_for_nats
   end
 

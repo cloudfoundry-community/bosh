@@ -16,9 +16,10 @@ import (
 	boshcmd "bosh/platform/commands"
 	boshdisk "bosh/platform/disk"
 	fakedisk "bosh/platform/disk/fakes"
-	boshnet "bosh/platform/net"
+	fakenet "bosh/platform/net/fakes"
 	fakestats "bosh/platform/stats/fakes"
 	boshvitals "bosh/platform/vitals"
+	boshsettings "bosh/settings"
 	boshdirs "bosh/settings/directories"
 	fakesys "bosh/system/fakes"
 )
@@ -30,13 +31,13 @@ var _ = Describe("LinuxPlatform", func() {
 		cmdRunner          *fakesys.FakeCmdRunner
 		diskManager        *fakedisk.FakeDiskManager
 		dirProvider        boshdirs.DirectoriesProvider
-		diskWaitTimeout    time.Duration
 		devicePathResolver *fakedpresolv.FakeDevicePathResolver
 		platform           Platform
 		cdutil             *fakecd.FakeCdUtil
 		compressor         boshcmd.Compressor
 		copier             boshcmd.Copier
 		vitalsService      boshvitals.Service
+		netManager         *fakenet.FakeNetManager
 		options            LinuxOptions
 	)
 
@@ -48,11 +49,11 @@ var _ = Describe("LinuxPlatform", func() {
 		cmdRunner = fakesys.NewFakeCmdRunner()
 		diskManager = fakedisk.NewFakeDiskManager()
 		dirProvider = boshdirs.NewDirectoriesProvider("/fake-dir")
-		diskWaitTimeout = 1 * time.Millisecond
 		cdutil = fakecd.NewFakeCdUtil()
 		compressor = boshcmd.NewTarballCompressor(cmdRunner, fs)
 		copier = boshcmd.NewCpCopier(cmdRunner, fs, logger)
 		vitalsService = boshvitals.NewService(collector, dirProvider)
+		netManager = &fakenet.FakeNetManager{}
 		devicePathResolver = fakedpresolv.NewFakeDevicePathResolver()
 		options = LinuxOptions{}
 
@@ -69,8 +70,6 @@ var _ = Describe("LinuxPlatform", func() {
 
 	JustBeforeEach(func() {
 		logger := boshlog.NewLogger(boshlog.LevelNone)
-
-		netManager := boshnet.NewCentosNetManager(fs, cmdRunner, 1*time.Millisecond, logger)
 
 		platform = NewLinuxPlatform(
 			fs,
@@ -173,11 +172,11 @@ bosh_foobar:...`
 		})
 	})
 
-	Describe("SetupSsh", func() {
+	Describe("SetupSSH", func() {
 		It("setup ssh", func() {
 			fs.HomeDirHomePath = "/some/home/dir"
 
-			platform.SetupSsh("some public key", "vcap")
+			platform.SetupSSH("some public key", "vcap")
 
 			sshDirPath := "/some/home/dir/.ssh"
 			sshDirStat := fs.GetFileTestStat(sshDirPath)
@@ -951,6 +950,44 @@ fake-base-path/data/sys/log/*.log fake-base-path/data/sys/log/*/*.log fake-base-
 
 			Expect(username).To(Equal("fake-user"))
 			Expect(password).To(Equal("fake:random:password"))
+		})
+	})
+
+	Describe("PrepareForNetworkingChange", func() {
+		It("removes the network persistent rules file", func() {
+			fs.WriteFile("/etc/udev/rules.d/70-persistent-net.rules", []byte{})
+
+			err := platform.PrepareForNetworkingChange()
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fs.FileExists("/etc/udev/rules.d/70-persistent-net.rules")).To(BeFalse())
+		})
+
+		It("returns error if removing persistent rules file fails", func() {
+			fs.RemoveAllError = errors.New("fake-remove-all-error")
+
+			err := platform.PrepareForNetworkingChange()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-remove-all-error"))
+		})
+	})
+
+	Describe("GetDefaultNetwork", func() {
+		It("returns default network according to net manager", func() {
+			netManager.GetDefaultNetworkNetwork = boshsettings.Network{IP: "fake-ip"}
+
+			network, err := platform.GetDefaultNetwork()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(network).To(Equal(boshsettings.Network{IP: "fake-ip"}))
+		})
+
+		It("returns error if net manager fails to retrieve default network", func() {
+			netManager.GetDefaultNetworkErr = errors.New("fake-get-default-network-err")
+
+			network, err := platform.GetDefaultNetwork()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("fake-get-default-network-err"))
+			Expect(network).To(Equal(boshsettings.Network{}))
 		})
 	})
 })

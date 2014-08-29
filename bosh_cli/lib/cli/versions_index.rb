@@ -1,8 +1,5 @@
-# Copyright (c) 2009-2012 VMware, Inc.
-
 module Bosh::Cli
   class VersionsIndex
-    include VersionCalc
 
     def initialize(storage_dir, name_prefix = nil)
       @storage_dir = File.expand_path(storage_dir)
@@ -27,27 +24,13 @@ module Bosh::Cli
       @data["builds"][fingerprint]
     end
 
-    def latest_version(major = nil)
+    def latest_version
       builds = @data["builds"].values
-
-      if major
-        builds = builds.select do |build|
-          major_version(build["version"]) == major
-        end
-      end
 
       return nil if builds.empty?
 
-      sorted = builds.sort do |build1, build2|
-        cmp = version_cmp(build2["version"], build1["version"])
-        if cmp == 0
-          raise "There is a duplicate version `#{build1["version"]}' " +
-                  "in index `#{@index_file}'"
-        end
-        cmp
-      end
-
-      sorted[0]["version"]
+      version_strings = builds.map { |b| b["version"] }
+      Bosh::Common::Version::ReleaseVersion.parse_list(version_strings).latest.to_s
     end
 
     def version_exists?(version)
@@ -69,7 +52,7 @@ module Bosh::Cli
       end
 
       @data["builds"].each_pair do |fp, build|
-        if version_cmp(build["version"], version) == 0 && fp != fingerprint
+        if build["version"] == version && fp != fingerprint
           raise "Trying to add duplicate version `#{version}' " +
                     "into index `#{@index_file}'"
         end
@@ -92,6 +75,10 @@ module Bosh::Cli
       name = @name_prefix.blank? ?
           "#{version}.tgz" : "#{@name_prefix}-#{version}.tgz"
       File.join(@storage_dir, name)
+    end
+
+    def versions
+      @data['builds'].map { |_, build| build['version'] }
     end
 
     private
@@ -118,7 +105,6 @@ module Bosh::Cli
             "#{data.class} given, Hash expected"
       end
       @data = data
-      @data.delete("latest_version") # Indices used to track latest versions
       @data["builds"] ||= {}
     end
   end

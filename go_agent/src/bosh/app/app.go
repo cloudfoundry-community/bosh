@@ -27,7 +27,9 @@ import (
 	boshplatform "bosh/platform"
 	boshsettings "bosh/settings"
 	boshdirs "bosh/settings/directories"
+	boshsyslog "bosh/syslog"
 	boshsys "bosh/system"
+	boshtime "bosh/time"
 	boshuuid "bosh/uuid"
 )
 
@@ -93,9 +95,9 @@ func (app *app) Setup(args []string) error {
 		return bosherr.WrapError(err, "Getting mbus handler")
 	}
 
-	blobstoreProvider := boshblob.NewProvider(app.platform, dirProvider)
+	blobstoreProvider := boshblob.NewProvider(app.platform, dirProvider, app.logger)
 
-	blobstore, err := blobstoreProvider.Get(settingsService.GetBlobstore())
+	blobstore, err := blobstoreProvider.Get(settingsService.GetSettings().Blobstore)
 	if err != nil {
 		return bosherr.WrapError(err, "Getting blobstore")
 	}
@@ -126,6 +128,8 @@ func (app *app) Setup(args []string) error {
 
 	uuidGen := boshuuid.NewGenerator()
 
+	timeService := boshtime.NewConcreteService()
+
 	taskService := boshtask.NewAsyncTaskService(uuidGen, app.logger)
 
 	taskManager := boshtask.NewManagerProvider().NewManager(
@@ -135,7 +139,10 @@ func (app *app) Setup(args []string) error {
 	)
 
 	specFilePath := filepath.Join(dirProvider.BoshDir(), "spec.json")
-	specService := boshas.NewConcreteV1Service(app.platform.GetFs(), specFilePath)
+	specService := boshas.NewConcreteV1Service(
+		app.platform.GetFs(),
+		specFilePath,
+	)
 
 	drainScriptProvider := boshdrain.NewConcreteDrainScriptProvider(
 		app.platform.GetRunner(),
@@ -146,7 +153,6 @@ func (app *app) Setup(args []string) error {
 	actionFactory := boshaction.NewFactory(
 		settingsService,
 		app.platform,
-		app.infrastructure,
 		blobstore,
 		taskService,
 		notifier,
@@ -170,14 +176,24 @@ func (app *app) Setup(args []string) error {
 
 	alertBuilder := boshalert.NewBuilder(settingsService, app.logger)
 
+	alertSender := boshagent.NewConcreteAlertSender(
+		mbusHandler,
+		alertBuilder,
+		uuidGen,
+		timeService,
+	)
+
+	syslogServer := boshsyslog.NewServer(33331, app.logger)
+
 	app.agent = boshagent.New(
 		app.logger,
 		mbusHandler,
 		app.platform,
 		actionDispatcher,
-		alertBuilder,
+		alertSender,
 		jobSupervisor,
 		specService,
+		syslogServer,
 		time.Minute,
 	)
 
